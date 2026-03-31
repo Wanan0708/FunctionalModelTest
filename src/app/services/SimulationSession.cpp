@@ -43,6 +43,109 @@ const ScenarioDefinition* SimulationSession::scenarioDefinition() const
     return scenarioLoaded_ ? &scenario_ : nullptr;
 }
 
+bool SimulationSession::updateScenarioDefinition(ScenarioDefinition scenarioDefinition)
+{
+    if (!scenarioLoaded_) {
+        lastError_ = QStringLiteral("尚未加载场景，无法更新场景属性。");
+        appendLog(QStringLiteral("场景编辑失败: %1").arg(lastError_));
+        return false;
+    }
+
+    if (scenarioDefinition.name.empty()) {
+        lastError_ = QStringLiteral("场景名称不能为空。");
+        appendLog(QStringLiteral("场景编辑失败: %1").arg(lastError_));
+        return false;
+    }
+
+    scenario_ = std::move(scenarioDefinition);
+    simulation_.stop();
+    rebuildFromScenario();
+    appendLog(QStringLiteral("场景定义已更新: %1").arg(currentScenarioName()));
+    return true;
+}
+
+bool SimulationSession::addEntityDefinition(EntityDefinition entityDefinition)
+{
+    if (!scenarioLoaded_) {
+        lastError_ = QStringLiteral("尚未加载场景，无法新增实体。");
+        appendLog(QStringLiteral("实体新增失败: %1").arg(lastError_));
+        return false;
+    }
+
+    if (entityDefinition.identity.id.empty()) {
+        lastError_ = QStringLiteral("新增实体必须包含唯一 ID。");
+        appendLog(QStringLiteral("实体新增失败: %1").arg(lastError_));
+        return false;
+    }
+
+    for (const auto& entity : scenario_.entities) {
+        if (entity.identity.id == entityDefinition.identity.id) {
+            lastError_ = QStringLiteral("实体 ID 已存在: %1").arg(QString::fromStdString(entityDefinition.identity.id));
+            appendLog(QStringLiteral("实体新增失败: %1").arg(lastError_));
+            return false;
+        }
+    }
+
+    scenario_.entities.push_back(std::move(entityDefinition));
+    simulation_.stop();
+    rebuildFromScenario();
+    appendLog(QStringLiteral("实体已新增: %1").arg(QString::fromStdString(scenario_.entities.back().identity.id)));
+    return true;
+}
+
+bool SimulationSession::removeEntityDefinition(const std::string& entityId)
+{
+    if (!scenarioLoaded_) {
+        lastError_ = QStringLiteral("尚未加载场景，无法删除实体。");
+        appendLog(QStringLiteral("实体删除失败: %1").arg(lastError_));
+        return false;
+    }
+
+    for (auto it = scenario_.entities.begin(); it != scenario_.entities.end(); ++it) {
+        if (it->identity.id != entityId) {
+            continue;
+        }
+
+        scenario_.entities.erase(it);
+        simulation_.stop();
+        rebuildFromScenario();
+        appendLog(QStringLiteral("实体已删除: %1").arg(QString::fromStdString(entityId)));
+        return true;
+    }
+
+    lastError_ = QStringLiteral("未找到实体: %1").arg(QString::fromStdString(entityId));
+    appendLog(QStringLiteral("实体删除失败: %1").arg(lastError_));
+    return false;
+}
+
+bool SimulationSession::updateEntityDefinition(const std::string& entityId, EntityDefinition entityDefinition)
+{
+    if (!scenarioLoaded_) {
+        lastError_ = QStringLiteral("尚未加载场景，无法更新实体。");
+        appendLog(QStringLiteral("实体编辑失败: %1").arg(lastError_));
+        return false;
+    }
+
+    for (auto& entity : scenario_.entities) {
+        if (entity.identity.id != entityId) {
+            continue;
+        }
+
+        entityDefinition.identity.id = entity.identity.id;
+        entityDefinition.identity.tags = entity.identity.tags;
+        entityDefinition.mission = entity.mission;
+        entity = std::move(entityDefinition);
+        simulation_.stop();
+        rebuildFromScenario();
+        appendLog(QStringLiteral("实体定义已更新: %1").arg(QString::fromStdString(entityId)));
+        return true;
+    }
+
+    lastError_ = QStringLiteral("未找到实体: %1").arg(QString::fromStdString(entityId));
+    appendLog(QStringLiteral("实体编辑失败: %1").arg(lastError_));
+    return false;
+}
+
 bool SimulationSession::updateEntityMissionDefinition(const std::string& entityId, EntityMissionDefinition missionDefinition)
 {
     if (!scenarioLoaded_) {

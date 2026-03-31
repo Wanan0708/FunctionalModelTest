@@ -1,5 +1,10 @@
 #include "ui/widgets/MainWindow.h"
 
+#include "ui/widgets/EntityEditorPanel.h"
+#include "ui/widgets/MissionEditorPanel.h"
+#include "ui/widgets/ScenarioEditorPanel.h"
+#include "ui/widgets/SimulationControlPanel.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -8,10 +13,10 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
-#include <QFormLayout>
 #include <QFrame>
 #include <QGraphicsScene>
 #include <QGraphicsSimpleTextItem>
@@ -27,12 +32,14 @@
 #include <QPen>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QStringList>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QSplitter>
 #include <QTimer>
+#include <QToolBox>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWidget>
@@ -161,6 +168,89 @@ QString formatRouteWaypoints(const std::vector<fm::app::RouteWaypointRenderState
     }
 
     return points.join(QStringLiteral("\n"));
+}
+
+QString formatRouteDefinitionEditorText(const std::vector<fm::app::EntityKinematicsDefinition::RouteWaypointDefinition>& routeWaypoints)
+{
+    if (routeWaypoints.empty()) {
+        return QString();
+    }
+
+    QStringList points;
+    for (const auto& waypoint : routeWaypoints) {
+        const QString waypointName = waypoint.name.empty() ? QStringLiteral("wp") : QString::fromStdString(waypoint.name);
+        points.push_back(QStringLiteral("%1, %2, %3, %4")
+                             .arg(waypointName)
+                             .arg(waypoint.position.x, 0, 'f', 2)
+                             .arg(waypoint.position.y, 0, 'f', 2)
+                             .arg(waypoint.loiterSeconds, 0, 'f', 2));
+    }
+
+    return points.join(QStringLiteral("\n"));
+}
+
+QString formatRouteWaypointListEntry(const fm::app::EntityKinematicsDefinition::RouteWaypointDefinition& waypoint)
+{
+    return QStringLiteral("%1 | (%2, %3) | 停留 %4 s")
+        .arg(QString::fromStdString(waypoint.name))
+        .arg(waypoint.position.x, 0, 'f', 2)
+        .arg(waypoint.position.y, 0, 'f', 2)
+        .arg(waypoint.loiterSeconds, 0, 'f', 2);
+}
+
+bool parseRouteDefinitionEditorText(const QString& routeText,
+                                    std::vector<fm::app::EntityKinematicsDefinition::RouteWaypointDefinition>& route,
+                                    QString& errorMessage)
+{
+    route.clear();
+
+    const QStringList lines = routeText.split('\n');
+    for (int lineIndex = 0; lineIndex < lines.size(); ++lineIndex) {
+        const QString trimmedLine = lines[lineIndex].trimmed();
+        if (trimmedLine.isEmpty()) {
+            continue;
+        }
+
+        const QStringList rawParts = trimmedLine.split(',');
+        QStringList parts;
+        for (const auto& rawPart : rawParts) {
+            parts.push_back(rawPart.trimmed());
+        }
+
+        if (parts.size() != 4) {
+            errorMessage = QStringLiteral("第 %1 行需要按“名称, X, Y, 停留秒”填写。")
+                               .arg(lineIndex + 1);
+            return false;
+        }
+
+        bool xOk = false;
+        bool yOk = false;
+        bool loiterOk = false;
+        const double x = parts[1].toDouble(&xOk);
+        const double y = parts[2].toDouble(&yOk);
+        const double loiterSeconds = parts[3].toDouble(&loiterOk);
+        if (parts[0].isEmpty()) {
+            errorMessage = QStringLiteral("第 %1 行的航点名称不能为空。")
+                               .arg(lineIndex + 1);
+            return false;
+        }
+
+        if (!xOk || !yOk || !loiterOk) {
+            errorMessage = QStringLiteral("第 %1 行的坐标或停留秒必须是数字。")
+                               .arg(lineIndex + 1);
+            return false;
+        }
+
+        if (loiterSeconds < 0.0) {
+            errorMessage = QStringLiteral("第 %1 行的停留秒不能为负数。")
+                               .arg(lineIndex + 1);
+            return false;
+        }
+
+        route.push_back({parts[0].toStdString(), {x, y}, loiterSeconds});
+    }
+
+    return true;
 }
 
 QString formatEntityTags(const std::vector<std::string>& tags)
@@ -630,8 +720,8 @@ bool matchesSelectedEntityLog(const QString& entry,
 
 namespace fm::ui {
 
-MainWindow::MainWindow()
-    : session_(0.01)
+MainWindow::MainWindow(Mode mode)
+    : mode_(mode), session_(0.01)
 {
     buildUi();
     connectSignals();
@@ -642,105 +732,126 @@ MainWindow::MainWindow()
 
 MainWindow::~MainWindow() = default;
 
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    if (event == nullptr) {
+        return;
+    }
+
+    if (!promptToSaveUnsavedChanges(QStringLiteral("关闭当前窗口"))) {
+        event->ignore();
+        return;
+    }
+
+    event->accept();
+}
+
 void MainWindow::buildUi()
 {
     auto* centralWidget = new QWidget(this);
     auto* rootLayout = new QVBoxLayout(centralWidget);
-    auto* buttonLayout = new QHBoxLayout();
     auto* contentLayout = new QHBoxLayout();
-    auto* controlLayout = new QHBoxLayout();
 
-    loadButton_ = new QPushButton(QStringLiteral("加载场景"), centralWidget);
-    saveButton_ = new QPushButton(QStringLiteral("保存场景"), centralWidget);
-    startButton_ = new QPushButton(QStringLiteral("开始"), centralWidget);
-    pauseButton_ = new QPushButton(QStringLiteral("暂停"), centralWidget);
-    stepButton_ = new QPushButton(QStringLiteral("单步"), centralWidget);
-    resetButton_ = new QPushButton(QStringLiteral("重置"), centralWidget);
-    previousSnapshotButton_ = new QPushButton(QStringLiteral("上一帧"), centralWidget);
-    nextSnapshotButton_ = new QPushButton(QStringLiteral("下一帧"), centralWidget);
-    liveViewButton_ = new QPushButton(QStringLiteral("实时视图"), centralWidget);
-    zoomInButton_ = new QPushButton(QStringLiteral("放大"), centralWidget);
-    zoomOutButton_ = new QPushButton(QStringLiteral("缩小"), centralWidget);
-    resetViewButton_ = new QPushButton(QStringLiteral("重置视图"), centralWidget);
-    showTrailsCheckBox_ = new QCheckBox(QStringLiteral("显示轨迹"), centralWidget);
-    autoFitViewCheckBox_ = new QCheckBox(QStringLiteral("自动适配视图"), centralWidget);
-    lockSelectedEntityViewCheckBox_ = new QCheckBox(QStringLiteral("锁定选中实体"), centralWidget);
+    simulationControlPanel_ = new SimulationControlPanel(centralWidget);
+    scenarioEditorPanel_ = new ScenarioEditorPanel(centralWidget);
     selectedEntityLogOnlyCheckBox_ = new QCheckBox(QStringLiteral("仅选中实体日志"), centralWidget);
-    entityFilterComboBox_ = new QComboBox(centralWidget);
     logFilterComboBox_ = new QComboBox(centralWidget);
-    timeStepSpinBox_ = new QDoubleSpinBox(centralWidget);
     logView_ = new QPlainTextEdit(centralWidget);
     statusLabel_ = new QLabel(centralWidget);
     scenarioLabel_ = new QLabel(centralWidget);
     entityList_ = new QListWidget(centralWidget);
     entityDetailsLabel_ = new QLabel(centralWidget);
-    taskEditorHintLabel_ = new QLabel(centralWidget);
     recordingSummaryLabel_ = new QLabel(centralWidget);
-    taskObjectiveEdit_ = new QLineEdit(centralWidget);
-    taskBehaviorComboBox_ = new QComboBox(centralWidget);
-    taskTargetComboBox_ = new QComboBox(centralWidget);
-    taskOrbitDirectionComboBox_ = new QComboBox(centralWidget);
-    taskInterceptDistanceEdit_ = new QLineEdit(centralWidget);
-    taskOrbitRadiusEdit_ = new QLineEdit(centralWidget);
-    taskOrbitAcquireToleranceEdit_ = new QLineEdit(centralWidget);
-    taskOrbitCompletionToleranceEdit_ = new QLineEdit(centralWidget);
-    taskOrbitHoldEdit_ = new QLineEdit(centralWidget);
-    taskEscortTrailEdit_ = new QLineEdit(centralWidget);
-    taskEscortOffsetEdit_ = new QLineEdit(centralWidget);
-    taskEscortSlotToleranceEdit_ = new QLineEdit(centralWidget);
-    taskEscortHoldEdit_ = new QLineEdit(centralWidget);
-    applyTaskButton_ = new QPushButton(QStringLiteral("应用任务"), centralWidget);
+    entityEditorPanel_ = new EntityEditorPanel(centralWidget);
+    missionEditorPanel_ = new MissionEditorPanel(centralWidget);
 
-    buttonLayout->addWidget(loadButton_);
-    buttonLayout->addWidget(saveButton_);
-    buttonLayout->addWidget(startButton_);
-    buttonLayout->addWidget(pauseButton_);
-    buttonLayout->addWidget(stepButton_);
-    buttonLayout->addWidget(resetButton_);
-    buttonLayout->addWidget(previousSnapshotButton_);
-    buttonLayout->addWidget(nextSnapshotButton_);
-    buttonLayout->addWidget(liveViewButton_);
-    buttonLayout->addWidget(zoomInButton_);
-    buttonLayout->addWidget(zoomOutButton_);
-    buttonLayout->addWidget(resetViewButton_);
-    buttonLayout->addStretch();
+    loadButton_ = simulationControlPanel_->loadButton();
+    saveButton_ = simulationControlPanel_->saveButton();
+    startButton_ = simulationControlPanel_->startButton();
+    pauseButton_ = simulationControlPanel_->pauseButton();
+    stepButton_ = simulationControlPanel_->stepButton();
+    resetButton_ = simulationControlPanel_->resetButton();
+    previousSnapshotButton_ = simulationControlPanel_->previousSnapshotButton();
+    nextSnapshotButton_ = simulationControlPanel_->nextSnapshotButton();
+    liveViewButton_ = simulationControlPanel_->liveViewButton();
+    zoomInButton_ = simulationControlPanel_->zoomInButton();
+    zoomOutButton_ = simulationControlPanel_->zoomOutButton();
+    resetViewButton_ = simulationControlPanel_->resetViewButton();
+    showTrailsCheckBox_ = simulationControlPanel_->showTrailsCheckBox();
+    autoFitViewCheckBox_ = simulationControlPanel_->autoFitViewCheckBox();
+    lockSelectedEntityViewCheckBox_ = simulationControlPanel_->lockSelectedEntityViewCheckBox();
+    entityFilterComboBox_ = simulationControlPanel_->entityFilterComboBox();
+    timeStepSpinBox_ = simulationControlPanel_->timeStepSpinBox();
+    scenarioEditorHintLabel_ = scenarioEditorPanel_->hintLabel();
+    scenarioNameEdit_ = scenarioEditorPanel_->nameEdit();
+    scenarioDescriptionEdit_ = scenarioEditorPanel_->descriptionEdit();
+    scenarioTimeOfDayEdit_ = scenarioEditorPanel_->timeOfDayEdit();
+    scenarioWeatherEdit_ = scenarioEditorPanel_->weatherEdit();
+    scenarioVisibilityEdit_ = scenarioEditorPanel_->visibilityEdit();
+    scenarioWindXEdit_ = scenarioEditorPanel_->windXEdit();
+    scenarioWindYEdit_ = scenarioEditorPanel_->windYEdit();
+    scenarioBoundsMinXEdit_ = scenarioEditorPanel_->boundsMinXEdit();
+    scenarioBoundsMinYEdit_ = scenarioEditorPanel_->boundsMinYEdit();
+    scenarioBoundsMaxXEdit_ = scenarioEditorPanel_->boundsMaxXEdit();
+    scenarioBoundsMaxYEdit_ = scenarioEditorPanel_->boundsMaxYEdit();
+    applyScenarioButton_ = scenarioEditorPanel_->applyButton();
 
-    showTrailsCheckBox_->setChecked(true);
-    autoFitViewCheckBox_->setChecked(true);
-    entityFilterComboBox_->addItem(QStringLiteral("全部实体"), QStringLiteral("all"));
-    entityFilterComboBox_->addItem(QStringLiteral("活动任务"), QStringLiteral("active"));
-    entityFilterComboBox_->addItem(QStringLiteral("终态任务"), QStringLiteral("terminal"));
-    entityFilterComboBox_->addItem(QStringLiteral("已完成"), QStringLiteral("completed"));
-    entityFilterComboBox_->addItem(QStringLiteral("已中止"), QStringLiteral("aborted"));
+    entityEditorHintLabel_ = entityEditorPanel_->hintLabel();
+    entityIdEdit_ = entityEditorPanel_->idEdit();
+    entityDisplayNameEdit_ = entityEditorPanel_->displayNameEdit();
+    entitySideEdit_ = entityEditorPanel_->sideEdit();
+    entityCategoryEdit_ = entityEditorPanel_->categoryEdit();
+    entityRoleEdit_ = entityEditorPanel_->roleEdit();
+    entityColorEdit_ = entityEditorPanel_->colorEdit();
+    entityPositionXEdit_ = entityEditorPanel_->positionXEdit();
+    entityPositionYEdit_ = entityEditorPanel_->positionYEdit();
+    entityVelocityXEdit_ = entityEditorPanel_->velocityXEdit();
+    entityVelocityYEdit_ = entityEditorPanel_->velocityYEdit();
+    entityHeadingEdit_ = entityEditorPanel_->headingEdit();
+    entityMaxSpeedEdit_ = entityEditorPanel_->maxSpeedEdit();
+    entityMaxTurnRateEdit_ = entityEditorPanel_->maxTurnRateEdit();
+    entitySensorEnabledCheckBox_ = entityEditorPanel_->sensorEnabledCheckBox();
+    entitySensorTypeEdit_ = entityEditorPanel_->sensorTypeEdit();
+    entitySensorRangeEdit_ = entityEditorPanel_->sensorRangeEdit();
+    entitySensorFieldOfViewEdit_ = entityEditorPanel_->sensorFieldOfViewEdit();
+    entityRouteWaypointList_ = entityEditorPanel_->routeWaypointList();
+    entityRouteWaypointNameEdit_ = entityEditorPanel_->routeWaypointNameEdit();
+    entityRouteWaypointXEdit_ = entityEditorPanel_->routeWaypointXEdit();
+    entityRouteWaypointYEdit_ = entityEditorPanel_->routeWaypointYEdit();
+    entityRouteWaypointLoiterEdit_ = entityEditorPanel_->routeWaypointLoiterEdit();
+    entityRouteEdit_ = entityEditorPanel_->routeEdit();
+    addRouteWaypointButton_ = entityEditorPanel_->addRouteWaypointButton();
+    updateRouteWaypointButton_ = entityEditorPanel_->updateRouteWaypointButton();
+    removeRouteWaypointButton_ = entityEditorPanel_->removeRouteWaypointButton();
+    moveRouteWaypointUpButton_ = entityEditorPanel_->moveRouteWaypointUpButton();
+    moveRouteWaypointDownButton_ = entityEditorPanel_->moveRouteWaypointDownButton();
+    clearRouteWaypointsButton_ = entityEditorPanel_->clearRouteWaypointsButton();
+    addEntityButton_ = entityEditorPanel_->addButton();
+    removeEntityButton_ = entityEditorPanel_->deleteButton();
+    applyEntityButton_ = entityEditorPanel_->applyButton();
+    taskEditorHintLabel_ = missionEditorPanel_->hintLabel();
+    taskObjectiveEdit_ = missionEditorPanel_->objectiveEdit();
+    taskBehaviorComboBox_ = missionEditorPanel_->behaviorComboBox();
+    taskTargetComboBox_ = missionEditorPanel_->targetComboBox();
+    taskOrbitDirectionComboBox_ = missionEditorPanel_->orbitDirectionComboBox();
+    taskInterceptDistanceEdit_ = missionEditorPanel_->interceptDistanceEdit();
+    taskOrbitRadiusEdit_ = missionEditorPanel_->orbitRadiusEdit();
+    taskOrbitAcquireToleranceEdit_ = missionEditorPanel_->orbitAcquireToleranceEdit();
+    taskOrbitCompletionToleranceEdit_ = missionEditorPanel_->orbitCompletionToleranceEdit();
+    taskOrbitHoldEdit_ = missionEditorPanel_->orbitHoldEdit();
+    taskEscortTrailEdit_ = missionEditorPanel_->escortTrailEdit();
+    taskEscortOffsetEdit_ = missionEditorPanel_->escortOffsetEdit();
+    taskEscortSlotToleranceEdit_ = missionEditorPanel_->escortSlotToleranceEdit();
+    taskEscortHoldEdit_ = missionEditorPanel_->escortHoldEdit();
+    applyTaskButton_ = missionEditorPanel_->applyButton();
+
     logFilterComboBox_->addItem(QStringLiteral("全部日志"), QStringLiteral("all"));
     logFilterComboBox_->addItem(QStringLiteral("任务阶段"), QStringLiteral("mission"));
     logFilterComboBox_->addItem(QStringLiteral("任务终态"), QStringLiteral("terminal"));
     logFilterComboBox_->addItem(QStringLiteral("机动引导"), QStringLiteral("guidance"));
     logFilterComboBox_->addItem(QStringLiteral("航路到达"), QStringLiteral("route"));
     logFilterComboBox_->addItem(QStringLiteral("系统事件"), QStringLiteral("system"));
-    taskBehaviorComboBox_->addItem(QStringLiteral("巡逻"), QStringLiteral("patrol"));
-    taskBehaviorComboBox_->addItem(QStringLiteral("拦截"), QStringLiteral("intercept"));
-    taskBehaviorComboBox_->addItem(QStringLiteral("护航"), QStringLiteral("escort"));
-    taskBehaviorComboBox_->addItem(QStringLiteral("盘旋"), QStringLiteral("orbit"));
-    taskBehaviorComboBox_->addItem(QStringLiteral("转场"), QStringLiteral("transit"));
-    taskTargetComboBox_->addItem(QStringLiteral("无"), QString());
-    taskOrbitDirectionComboBox_->addItem(QStringLiteral("默认"), QString());
-    taskOrbitDirectionComboBox_->addItem(QStringLiteral("顺时针"), QStringLiteral("clockwise"));
-    taskOrbitDirectionComboBox_->addItem(QStringLiteral("逆时针"), QStringLiteral("counterclockwise"));
-    timeStepSpinBox_->setDecimals(3);
-    timeStepSpinBox_->setRange(0.01, 1.0);
-    timeStepSpinBox_->setSingleStep(0.01);
-    timeStepSpinBox_->setSuffix(QStringLiteral(" s/tick"));
     timeStepSpinBox_->setValue(session_.fixedTimeStepSeconds());
-
-    controlLayout->addWidget(showTrailsCheckBox_);
-    controlLayout->addWidget(autoFitViewCheckBox_);
-    controlLayout->addWidget(lockSelectedEntityViewCheckBox_);
-    controlLayout->addWidget(new QLabel(QStringLiteral("实体过滤"), centralWidget));
-    controlLayout->addWidget(entityFilterComboBox_);
-    controlLayout->addWidget(new QLabel(QStringLiteral("固定时间步"), centralWidget));
-    controlLayout->addWidget(timeStepSpinBox_);
-    controlLayout->addStretch();
 
     scene_ = new QGraphicsScene(this);
     scene_->setSceneRect(-450.0, -320.0, 900.0, 640.0);
@@ -764,18 +875,6 @@ void MainWindow::buildUi()
     entityDetailsLabel_->setMinimumHeight(0);
     entityDetailsLabel_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     entityDetailsLabel_->setStyleSheet(QStringLiteral("QLabel { background: #F3F5F1; border: 1px solid #C5CEC7; padding: 10px; }"));
-    taskEditorHintLabel_->setWordWrap(true);
-    taskEditorHintLabel_->setText(QStringLiteral("选择实体后可修改任务；数值留空表示使用默认参数。应用后会重置仿真到初始态。"));
-    taskObjectiveEdit_->setPlaceholderText(QStringLiteral("任务说明"));
-    taskInterceptDistanceEdit_->setPlaceholderText(QStringLiteral("默认"));
-    taskOrbitRadiusEdit_->setPlaceholderText(QStringLiteral("默认/自动"));
-    taskOrbitAcquireToleranceEdit_->setPlaceholderText(QStringLiteral("默认"));
-    taskOrbitCompletionToleranceEdit_->setPlaceholderText(QStringLiteral("默认"));
-    taskOrbitHoldEdit_->setPlaceholderText(QStringLiteral("默认"));
-    taskEscortTrailEdit_->setPlaceholderText(QStringLiteral("默认"));
-    taskEscortOffsetEdit_->setPlaceholderText(QStringLiteral("默认"));
-    taskEscortSlotToleranceEdit_->setPlaceholderText(QStringLiteral("默认"));
-    taskEscortHoldEdit_->setPlaceholderText(QStringLiteral("默认"));
     recordingSummaryLabel_->setWordWrap(true);
     recordingSummaryLabel_->setMinimumWidth(220);
     recordingSummaryLabel_->setMinimumHeight(0);
@@ -809,91 +908,178 @@ void MainWindow::buildUi()
     entityDetailsLayout->addWidget(new QLabel(QStringLiteral("实体详情"), entityDetailsPanel));
     entityDetailsLayout->addWidget(entityDetailsScrollArea);
 
-    auto* taskEditorForm = new QFormLayout();
-    taskEditorForm->addRow(QStringLiteral("任务说明"), taskObjectiveEdit_);
-    taskEditorForm->addRow(QStringLiteral("任务行为"), taskBehaviorComboBox_);
-    taskEditorForm->addRow(QStringLiteral("任务目标"), taskTargetComboBox_);
-    taskEditorForm->addRow(QStringLiteral("拦截完成距离"), taskInterceptDistanceEdit_);
-    taskEditorForm->addRow(QStringLiteral("盘旋半径"), taskOrbitRadiusEdit_);
-    taskEditorForm->addRow(QStringLiteral("盘旋方向"), taskOrbitDirectionComboBox_);
-    taskEditorForm->addRow(QStringLiteral("盘旋进入容差"), taskOrbitAcquireToleranceEdit_);
-    taskEditorForm->addRow(QStringLiteral("盘旋完成容差"), taskOrbitCompletionToleranceEdit_);
-    taskEditorForm->addRow(QStringLiteral("盘旋保持时间"), taskOrbitHoldEdit_);
-    taskEditorForm->addRow(QStringLiteral("护航尾随距离"), taskEscortTrailEdit_);
-    taskEditorForm->addRow(QStringLiteral("护航侧向偏移"), taskEscortOffsetEdit_);
-    taskEditorForm->addRow(QStringLiteral("护航槽位容差"), taskEscortSlotToleranceEdit_);
-    taskEditorForm->addRow(QStringLiteral("护航稳定保持"), taskEscortHoldEdit_);
-
-    auto* taskEditorContent = new QWidget(centralWidget);
-    auto* taskEditorContentLayout = new QVBoxLayout(taskEditorContent);
-    taskEditorContentLayout->setContentsMargins(0, 0, 0, 0);
-    taskEditorContentLayout->addWidget(taskEditorHintLabel_);
-    taskEditorContentLayout->addLayout(taskEditorForm);
-    taskEditorContentLayout->addWidget(applyTaskButton_);
-
-    auto* taskEditorScrollArea = new QScrollArea(centralWidget);
-    taskEditorScrollArea->setWidgetResizable(true);
-    taskEditorScrollArea->setFrameShape(QFrame::NoFrame);
-    taskEditorScrollArea->setWidget(taskEditorContent);
-    taskEditorScrollArea->setMinimumHeight(160);
-
-    auto* taskEditorPanel = new QWidget(centralWidget);
-    auto* taskEditorLayout = new QVBoxLayout(taskEditorPanel);
-    taskEditorLayout->setContentsMargins(0, 0, 0, 0);
-    taskEditorLayout->addWidget(new QLabel(QStringLiteral("任务编辑"), taskEditorPanel));
-    taskEditorLayout->addWidget(taskEditorScrollArea);
-
-    auto* recordingPanel = new QWidget(centralWidget);
-    auto* recordingLayout = new QVBoxLayout(recordingPanel);
+    recordingPanel_ = new QWidget(centralWidget);
+    auto* recordingLayout = new QVBoxLayout(recordingPanel_);
     recordingLayout->setContentsMargins(0, 0, 0, 0);
-    recordingLayout->addWidget(new QLabel(QStringLiteral("记录摘要"), recordingPanel));
+    recordingLayout->addWidget(new QLabel(QStringLiteral("记录摘要"), recordingPanel_));
     recordingLayout->addWidget(recordingSummaryScrollArea);
 
-    auto* logPanel = new QWidget(centralWidget);
-    auto* logLayout = new QVBoxLayout(logPanel);
+    logPanel_ = new QWidget(centralWidget);
+    auto* logLayout = new QVBoxLayout(logPanel_);
     logLayout->setContentsMargins(0, 0, 0, 0);
-    logLayout->addWidget(new QLabel(QStringLiteral("事件日志"), logPanel));
+    logLayout->addWidget(new QLabel(QStringLiteral("事件日志"), logPanel_));
     logLayout->addWidget(logFilterComboBox_);
     logLayout->addWidget(selectedEntityLogOnlyCheckBox_);
     logLayout->addWidget(logView_);
 
-    auto* sideSplitter = new QSplitter(Qt::Vertical, centralWidget);
-    sideSplitter->addWidget(entityListPanel);
-    sideSplitter->addWidget(entityDetailsPanel);
-    sideSplitter->addWidget(taskEditorPanel);
-    sideSplitter->addWidget(recordingPanel);
-    sideSplitter->addWidget(logPanel);
-    sideSplitter->setChildrenCollapsible(false);
-    sideSplitter->setHandleWidth(8);
-    sideSplitter->setStretchFactor(0, 2);
-    sideSplitter->setStretchFactor(1, 4);
-    sideSplitter->setStretchFactor(2, 4);
-    sideSplitter->setStretchFactor(3, 2);
-    sideSplitter->setStretchFactor(4, 3);
-    sideSplitter->setSizes({180, 260, 300, 150, 220});
-    sideSplitter->setMinimumWidth(300);
+    sideToolBox_ = new QToolBox(centralWidget);
+    sideToolBox_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+    sideToolBox_->addItem(entityDetailsPanel, QStringLiteral("实体详情"));
+    sideToolBox_->addItem(scenarioEditorPanel_, QStringLiteral("场景编辑"));
+    sideToolBox_->addItem(entityEditorPanel_, QStringLiteral("实体编辑"));
+    sideToolBox_->addItem(missionEditorPanel_, QStringLiteral("任务编辑"));
+    sideToolBox_->addItem(recordingPanel_, QStringLiteral("记录摘要"));
+    sideToolBox_->addItem(logPanel_, QStringLiteral("事件日志"));
+    sideToolBox_->setCurrentIndex(0);
+
+    auto* sidePanel = new QWidget(centralWidget);
+    auto* sidePanelLayout = new QVBoxLayout(sidePanel);
+    sidePanelLayout->setContentsMargins(0, 0, 0, 0);
+    sidePanelLayout->setSpacing(8);
+    sidePanelLayout->addWidget(entityListPanel);
+    sidePanelLayout->addWidget(sideToolBox_, 1);
+    sidePanel->setMinimumWidth(320);
 
     contentLayout->addWidget(view_, 1);
-    contentLayout->addWidget(sideSplitter);
+    contentLayout->addWidget(sidePanel);
 
-    rootLayout->addLayout(buttonLayout);
-    rootLayout->addLayout(controlLayout);
+    rootLayout->addWidget(simulationControlPanel_);
     rootLayout->addWidget(scenarioLabel_);
     rootLayout->addWidget(statusLabel_);
     rootLayout->addLayout(contentLayout);
 
     setCentralWidget(centralWidget);
-    setWindowTitle(QStringLiteral("FunctionalModelTest - MVP 骨架"));
 
     timer_ = new QTimer(this);
     timer_->setInterval(50);
 
+    applyWindowMode();
     updateTaskEditorFieldState();
+}
+
+void MainWindow::applyWindowMode()
+{
+    const bool isScenarioEditor = mode_ == Mode::ScenarioEditor;
+
+    simulationControlPanel_->setSimulationActionsVisible(!isScenarioEditor);
+    simulationControlPanel_->setPlaybackActionsVisible(!isScenarioEditor);
+    simulationControlPanel_->setTimeStepControlsVisible(!isScenarioEditor);
+    if (entityEditorPanel_ != nullptr) {
+        entityEditorPanel_->setVisible(isScenarioEditor);
+    }
+    if (scenarioEditorPanel_ != nullptr) {
+        scenarioEditorPanel_->setVisible(isScenarioEditor);
+    }
+    missionEditorPanel_->setVisible(isScenarioEditor);
+    if (recordingPanel_ != nullptr) {
+        recordingPanel_->setVisible(!isScenarioEditor);
+    }
+    if (logPanel_ != nullptr) {
+        logPanel_->setVisible(!isScenarioEditor);
+    }
+
+    if (sideToolBox_ != nullptr) {
+        for (int index = 0; index < sideToolBox_->count(); ++index) {
+            QWidget* itemWidget = sideToolBox_->widget(index);
+            if (itemWidget == nullptr) {
+                continue;
+            }
+
+            const bool isEditorItem = itemWidget == scenarioEditorPanel_
+                || itemWidget == entityEditorPanel_
+                || itemWidget == missionEditorPanel_;
+            const bool isSimulationItem = itemWidget == recordingPanel_ || itemWidget == logPanel_;
+            if (isEditorItem) {
+                sideToolBox_->setItemEnabled(index, isScenarioEditor);
+            } else if (isSimulationItem) {
+                sideToolBox_->setItemEnabled(index, !isScenarioEditor);
+            } else {
+                sideToolBox_->setItemEnabled(index, true);
+            }
+        }
+
+        sideToolBox_->setCurrentIndex(isScenarioEditor ? 1 : 0);
+    }
+
+    updateWindowTitle();
+}
+
+void MainWindow::updateWindowTitle()
+{
+    const bool isScenarioEditor = mode_ == Mode::ScenarioEditor;
+    setWindowTitle(isScenarioEditor
+                       ? QStringLiteral("FunctionalModelTest - 想定编辑[*]")
+                       : QStringLiteral("FunctionalModelTest - 仿真推演"));
+    setWindowModified(isScenarioEditor && hasUnsavedChanges_);
+}
+
+void MainWindow::setUnsavedChanges(bool hasUnsavedChanges)
+{
+    if (hasUnsavedChanges_ == hasUnsavedChanges) {
+        return;
+    }
+
+    hasUnsavedChanges_ = hasUnsavedChanges;
+    updateWindowTitle();
+}
+
+bool MainWindow::saveScenarioInteractively()
+{
+    const QString suggestedPath = !session_.currentScenarioPath().isEmpty()
+                                      ? session_.currentScenarioPath()
+                                      : (QApplication::applicationDirPath() + QStringLiteral("/assets/scenarios/edited_scenario.json"));
+    const auto filePath = QFileDialog::getSaveFileName(
+        this,
+        QStringLiteral("保存场景文件"),
+        suggestedPath,
+        QStringLiteral("JSON Files (*.json)"));
+
+    if (filePath.isEmpty()) {
+        return false;
+    }
+
+    if (!session_.saveScenarioToFile(filePath)) {
+        QMessageBox::warning(this, QStringLiteral("保存失败"), session_.lastError());
+        return false;
+    }
+
+    setUnsavedChanges(false);
+    updateStatus();
+    QMessageBox::information(this, QStringLiteral("保存成功"), QStringLiteral("场景已保存到:\n%1").arg(filePath));
+    return true;
+}
+
+bool MainWindow::promptToSaveUnsavedChanges(const QString& reason)
+{
+    if (mode_ != Mode::ScenarioEditor || !hasUnsavedChanges_) {
+        return true;
+    }
+
+    const auto choice = QMessageBox::question(
+        this,
+        QStringLiteral("存在未保存变更"),
+        QStringLiteral("当前想定有未保存变更。是否先保存再%1？").arg(reason),
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+        QMessageBox::Save);
+
+    if (choice == QMessageBox::Cancel) {
+        return false;
+    }
+
+    if (choice == QMessageBox::Discard) {
+        return true;
+    }
+
+    return saveScenarioInteractively();
 }
 
 void MainWindow::connectSignals()
 {
     connect(loadButton_, &QPushButton::clicked, this, [this]() {
+        if (!promptToSaveUnsavedChanges(QStringLiteral("加载其他场景"))) {
+            return;
+        }
+
         const auto defaultDir = QApplication::applicationDirPath() + QStringLiteral("/assets/scenarios");
         const auto filePath = QFileDialog::getOpenFileName(
             this,
@@ -907,11 +1093,14 @@ void MainWindow::connectSignals()
 
         if (!session_.loadScenario(filePath)) {
             QMessageBox::critical(this, QStringLiteral("加载失败"), session_.lastError());
+            return;
         }
 
+        setUnsavedChanges(false);
         forceFitViewOnNextRefresh_ = true;
         refreshScene();
         updateEntityList();
+        updateScenarioEditor();
         updateEntityDetails();
         updateRecordingSummary();
         updateLogView();
@@ -919,26 +1108,7 @@ void MainWindow::connectSignals()
     });
 
     connect(saveButton_, &QPushButton::clicked, this, [this]() {
-        const QString suggestedPath = !session_.currentScenarioPath().isEmpty()
-                                          ? session_.currentScenarioPath()
-                                          : (QApplication::applicationDirPath() + QStringLiteral("/assets/scenarios/edited_scenario.json"));
-        const auto filePath = QFileDialog::getSaveFileName(
-            this,
-            QStringLiteral("保存场景文件"),
-            suggestedPath,
-            QStringLiteral("JSON Files (*.json)"));
-
-        if (filePath.isEmpty()) {
-            return;
-        }
-
-        if (!session_.saveScenarioToFile(filePath)) {
-            QMessageBox::warning(this, QStringLiteral("保存失败"), session_.lastError());
-            return;
-        }
-
-        updateStatus();
-        QMessageBox::information(this, QStringLiteral("保存成功"), QStringLiteral("场景已保存到:\n%1").arg(filePath));
+        saveScenarioInteractively();
     });
 
     connect(startButton_, &QPushButton::clicked, this, [this]() {
@@ -1074,6 +1244,61 @@ void MainWindow::connectSignals()
         updateTaskEditorFieldState();
     });
 
+    connect(applyEntityButton_, &QPushButton::clicked, this, [this]() {
+        applyEntityEditorChanges();
+    });
+
+    connect(applyScenarioButton_, &QPushButton::clicked, this, [this]() {
+        applyScenarioEditorChanges();
+    });
+
+    connect(entityRouteWaypointList_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* current, QListWidgetItem*) {
+        if (current == nullptr) {
+            entityRouteWaypointNameEdit_->clear();
+            entityRouteWaypointXEdit_->clear();
+            entityRouteWaypointYEdit_->clear();
+            entityRouteWaypointLoiterEdit_->clear();
+        } else {
+            entityRouteWaypointNameEdit_->setText(current->data(Qt::UserRole).toString());
+            entityRouteWaypointXEdit_->setText(current->data(Qt::UserRole + 1).toString());
+            entityRouteWaypointYEdit_->setText(current->data(Qt::UserRole + 2).toString());
+            entityRouteWaypointLoiterEdit_->setText(current->data(Qt::UserRole + 3).toString());
+        }
+        updateRouteWaypointEditorState();
+    });
+
+    connect(addRouteWaypointButton_, &QPushButton::clicked, this, [this]() {
+        addRouteWaypoint();
+    });
+
+    connect(updateRouteWaypointButton_, &QPushButton::clicked, this, [this]() {
+        updateSelectedRouteWaypoint();
+    });
+
+    connect(removeRouteWaypointButton_, &QPushButton::clicked, this, [this]() {
+        removeSelectedRouteWaypoint();
+    });
+
+    connect(moveRouteWaypointUpButton_, &QPushButton::clicked, this, [this]() {
+        moveSelectedRouteWaypointUp();
+    });
+
+    connect(moveRouteWaypointDownButton_, &QPushButton::clicked, this, [this]() {
+        moveSelectedRouteWaypointDown();
+    });
+
+    connect(clearRouteWaypointsButton_, &QPushButton::clicked, this, [this]() {
+        clearRouteWaypoints();
+    });
+
+    connect(addEntityButton_, &QPushButton::clicked, this, [this]() {
+        addEntityFromEditor();
+    });
+
+    connect(removeEntityButton_, &QPushButton::clicked, this, [this]() {
+        removeSelectedEntity();
+    });
+
     connect(applyTaskButton_, &QPushButton::clicked, this, [this]() {
         applyTaskEditorChanges();
     });
@@ -1105,6 +1330,7 @@ void MainWindow::connectSignals()
 
     connect(entityList_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* current, QListWidgetItem*) {
         selectedEntityId_ = current != nullptr ? current->data(Qt::UserRole).toString().toStdString() : std::string {};
+        updateEntityEditor();
         updateTaskEditor();
         updateEntityDetails();
         refreshScene();
@@ -1115,8 +1341,11 @@ void MainWindow::loadDefaultScenario()
 {
     const auto defaultScenario = QApplication::applicationDirPath() + QStringLiteral("/assets/scenarios/sample_scenario.json");
     session_.loadScenario(defaultScenario);
+    setUnsavedChanges(false);
     forceFitViewOnNextRefresh_ = true;
     updateEntityList();
+    updateScenarioEditor();
+    updateEntityEditor();
     updateTaskEditor();
     updateEntityDetails();
     updateRecordingSummary();
@@ -1452,7 +1681,482 @@ void MainWindow::updateEntityList()
         }
     }
 
+    updateEntityEditor();
     updateTaskEditor();
+}
+
+void MainWindow::updateScenarioEditor()
+{
+    const auto* scenario = session_.scenarioDefinition();
+    if (scenario == nullptr) {
+        scenarioNameEdit_->clear();
+        scenarioDescriptionEdit_->clear();
+        scenarioTimeOfDayEdit_->clear();
+        scenarioWeatherEdit_->clear();
+        scenarioVisibilityEdit_->clear();
+        scenarioWindXEdit_->clear();
+        scenarioWindYEdit_->clear();
+        scenarioBoundsMinXEdit_->clear();
+        scenarioBoundsMinYEdit_->clear();
+        scenarioBoundsMaxXEdit_->clear();
+        scenarioBoundsMaxYEdit_->clear();
+        scenarioEditorHintLabel_->setText(QStringLiteral("加载场景后可编辑名称、描述、环境和边界。"));
+        applyScenarioButton_->setEnabled(false);
+        return;
+    }
+
+    scenarioNameEdit_->setText(QString::fromStdString(scenario->name));
+    scenarioDescriptionEdit_->setPlainText(QString::fromStdString(scenario->description));
+    scenarioTimeOfDayEdit_->setText(QString::fromStdString(scenario->environment.timeOfDay));
+    scenarioWeatherEdit_->setText(QString::fromStdString(scenario->environment.weather));
+    scenarioVisibilityEdit_->setText(QString::number(scenario->environment.visibilityMeters, 'f', 0));
+    scenarioWindXEdit_->setText(QString::number(scenario->environment.wind.x, 'f', 2));
+    scenarioWindYEdit_->setText(QString::number(scenario->environment.wind.y, 'f', 2));
+    scenarioBoundsMinXEdit_->setText(QString::number(scenario->mapBounds.minimum.x, 'f', 2));
+    scenarioBoundsMinYEdit_->setText(QString::number(scenario->mapBounds.minimum.y, 'f', 2));
+    scenarioBoundsMaxXEdit_->setText(QString::number(scenario->mapBounds.maximum.x, 'f', 2));
+    scenarioBoundsMaxYEdit_->setText(QString::number(scenario->mapBounds.maximum.y, 'f', 2));
+    scenarioEditorHintLabel_->setText(QStringLiteral("正在编辑场景属性；应用后会更新场景信息栏和视图边界。"));
+    applyScenarioButton_->setEnabled(true);
+}
+
+void MainWindow::updateEntityEditor()
+{
+    const auto* scenario = session_.scenarioDefinition();
+    const bool hasScenarioSelection = scenario != nullptr && !selectedEntityId_.empty();
+    if (!hasScenarioSelection) {
+        entityIdEdit_->clear();
+        entityDisplayNameEdit_->clear();
+        entitySideEdit_->clear();
+        entityCategoryEdit_->clear();
+        entityRoleEdit_->clear();
+        entityColorEdit_->clear();
+        entityPositionXEdit_->clear();
+        entityPositionYEdit_->clear();
+        entityVelocityXEdit_->clear();
+        entityVelocityYEdit_->clear();
+        entityHeadingEdit_->clear();
+        entityMaxSpeedEdit_->clear();
+        entityMaxTurnRateEdit_->clear();
+        entitySensorEnabledCheckBox_->setChecked(false);
+        entitySensorTypeEdit_->clear();
+        entitySensorRangeEdit_->clear();
+        entitySensorFieldOfViewEdit_->clear();
+        entityRouteWaypointList_->clear();
+        entityRouteWaypointNameEdit_->clear();
+        entityRouteWaypointXEdit_->clear();
+        entityRouteWaypointYEdit_->clear();
+        entityRouteWaypointLoiterEdit_->clear();
+        entityRouteEdit_->clear();
+        entityEditorHintLabel_->setText(QStringLiteral("选择实体后可编辑基础属性、运动学、传感器和航路。可直接增删改航点，底部显示只读航路预览。"));
+        applyEntityButton_->setEnabled(false);
+        removeEntityButton_->setEnabled(false);
+        updateRouteWaypointEditorState();
+        return;
+    }
+
+    const fm::app::EntityDefinition* selectedDefinition = nullptr;
+    for (const auto& entity : scenario->entities) {
+        if (entity.identity.id == selectedEntityId_) {
+            selectedDefinition = &entity;
+            break;
+        }
+    }
+
+    if (selectedDefinition == nullptr) {
+        applyEntityButton_->setEnabled(false);
+        removeEntityButton_->setEnabled(false);
+        return;
+    }
+
+    entityIdEdit_->setText(QString::fromStdString(selectedDefinition->identity.id));
+    entityDisplayNameEdit_->setText(QString::fromStdString(selectedDefinition->identity.displayName));
+    entitySideEdit_->setText(QString::fromStdString(selectedDefinition->identity.side));
+    entityCategoryEdit_->setText(QString::fromStdString(selectedDefinition->identity.category));
+    entityRoleEdit_->setText(QString::fromStdString(selectedDefinition->identity.role));
+    entityColorEdit_->setText(QString::fromStdString(selectedDefinition->identity.colorHex));
+    entityPositionXEdit_->setText(QString::number(selectedDefinition->kinematics.position.x, 'f', 2));
+    entityPositionYEdit_->setText(QString::number(selectedDefinition->kinematics.position.y, 'f', 2));
+    entityVelocityXEdit_->setText(QString::number(selectedDefinition->kinematics.velocity.x, 'f', 2));
+    entityVelocityYEdit_->setText(QString::number(selectedDefinition->kinematics.velocity.y, 'f', 2));
+    entityHeadingEdit_->setText(QString::number(selectedDefinition->kinematics.headingDegrees, 'f', 2));
+    entityMaxSpeedEdit_->setText(QString::number(selectedDefinition->kinematics.maxSpeedMetersPerSecond, 'f', 2));
+    entityMaxTurnRateEdit_->setText(QString::number(selectedDefinition->kinematics.maxTurnRateDegreesPerSecond, 'f', 2));
+    entitySensorEnabledCheckBox_->setChecked(selectedDefinition->sensor.enabled);
+    entitySensorTypeEdit_->setText(QString::fromStdString(selectedDefinition->sensor.type));
+    entitySensorRangeEdit_->setText(QString::number(selectedDefinition->sensor.rangeMeters, 'f', 2));
+    entitySensorFieldOfViewEdit_->setText(QString::number(selectedDefinition->sensor.fieldOfViewDegrees, 'f', 2));
+
+    {
+        const QSignalBlocker routeListBlocker(entityRouteWaypointList_);
+        entityRouteWaypointList_->clear();
+        for (const auto& waypoint : selectedDefinition->kinematics.route) {
+            auto* item = new QListWidgetItem(formatRouteWaypointListEntry(waypoint));
+            item->setData(Qt::UserRole, QString::fromStdString(waypoint.name));
+            item->setData(Qt::UserRole + 1, QString::number(waypoint.position.x, 'f', 2));
+            item->setData(Qt::UserRole + 2, QString::number(waypoint.position.y, 'f', 2));
+            item->setData(Qt::UserRole + 3, QString::number(waypoint.loiterSeconds, 'f', 2));
+            entityRouteWaypointList_->addItem(item);
+        }
+        if (entityRouteWaypointList_->count() > 0) {
+            entityRouteWaypointList_->setCurrentRow(0);
+        }
+    }
+
+    if (auto* routeItem = entityRouteWaypointList_->currentItem(); routeItem != nullptr) {
+        entityRouteWaypointNameEdit_->setText(routeItem->data(Qt::UserRole).toString());
+        entityRouteWaypointXEdit_->setText(routeItem->data(Qt::UserRole + 1).toString());
+        entityRouteWaypointYEdit_->setText(routeItem->data(Qt::UserRole + 2).toString());
+        entityRouteWaypointLoiterEdit_->setText(routeItem->data(Qt::UserRole + 3).toString());
+    } else {
+        entityRouteWaypointNameEdit_->clear();
+        entityRouteWaypointXEdit_->clear();
+        entityRouteWaypointYEdit_->clear();
+        entityRouteWaypointLoiterEdit_->clear();
+    }
+
+    entityRouteEdit_->setPlainText(formatRouteDefinitionEditorText(selectedDefinition->kinematics.route));
+    entityEditorHintLabel_->setText(QStringLiteral("正在编辑 %1 的实体定义；应用后会更新当前想定预览与航路。")
+                                        .arg(QString::fromStdString(selectedDefinition->identity.displayName.empty()
+                                                                        ? selectedDefinition->identity.id
+                                                                        : selectedDefinition->identity.displayName)));
+    applyEntityButton_->setEnabled(true);
+    removeEntityButton_->setEnabled(true);
+    updateRouteWaypointEditorState();
+}
+
+void MainWindow::updateRouteWaypointEditorState()
+{
+    const bool hasEntitySelection = !selectedEntityId_.empty() && applyEntityButton_ != nullptr && applyEntityButton_->isEnabled();
+    const bool hasWaypointSelection = entityRouteWaypointList_ != nullptr && entityRouteWaypointList_->currentItem() != nullptr;
+    const int currentWaypointRow = hasWaypointSelection ? entityRouteWaypointList_->currentRow() : -1;
+
+    entityRouteWaypointList_->setEnabled(hasEntitySelection);
+    entityRouteWaypointNameEdit_->setEnabled(hasEntitySelection);
+    entityRouteWaypointXEdit_->setEnabled(hasEntitySelection);
+    entityRouteWaypointYEdit_->setEnabled(hasEntitySelection);
+    entityRouteWaypointLoiterEdit_->setEnabled(hasEntitySelection);
+    entityRouteEdit_->setEnabled(hasEntitySelection);
+    addRouteWaypointButton_->setEnabled(hasEntitySelection);
+    updateRouteWaypointButton_->setEnabled(hasEntitySelection && hasWaypointSelection);
+    removeRouteWaypointButton_->setEnabled(hasEntitySelection && hasWaypointSelection);
+    moveRouteWaypointUpButton_->setEnabled(hasEntitySelection && hasWaypointSelection && currentWaypointRow > 0);
+    moveRouteWaypointDownButton_->setEnabled(hasEntitySelection && hasWaypointSelection
+                                             && currentWaypointRow + 1 < entityRouteWaypointList_->count());
+    clearRouteWaypointsButton_->setEnabled(hasEntitySelection && entityRouteWaypointList_->count() > 0);
+}
+
+void MainWindow::refreshRouteWaypointPreview()
+{
+    entityRouteEdit_->setPlainText(formatRouteDefinitionEditorText(routeWaypointDefinitionsFromEditor()));
+    updateRouteWaypointEditorState();
+}
+
+bool MainWindow::buildRouteWaypointDefinitionFromInputs(fm::app::EntityKinematicsDefinition::RouteWaypointDefinition& waypoint,
+                                                        QString& errorMessage) const
+{
+    const QString waypointName = entityRouteWaypointNameEdit_->text().trimmed();
+    if (waypointName.isEmpty()) {
+        errorMessage = QStringLiteral("航点名称不能为空。");
+        return false;
+    }
+
+    bool xOk = false;
+    bool yOk = false;
+    bool loiterOk = false;
+    const double x = entityRouteWaypointXEdit_->text().trimmed().toDouble(&xOk);
+    const double y = entityRouteWaypointYEdit_->text().trimmed().toDouble(&yOk);
+    const double loiterSeconds = entityRouteWaypointLoiterEdit_->text().trimmed().toDouble(&loiterOk);
+    if (!xOk || !yOk || !loiterOk) {
+        errorMessage = QStringLiteral("航点坐标和停留秒必须是数字。");
+        return false;
+    }
+
+    if (loiterSeconds < 0.0) {
+        errorMessage = QStringLiteral("航点停留秒不能为负数。");
+        return false;
+    }
+
+    waypoint = {waypointName.toStdString(), {x, y}, loiterSeconds};
+    return true;
+}
+
+std::vector<fm::app::EntityKinematicsDefinition::RouteWaypointDefinition> MainWindow::routeWaypointDefinitionsFromEditor() const
+{
+    std::vector<fm::app::EntityKinematicsDefinition::RouteWaypointDefinition> route;
+    route.reserve(static_cast<std::size_t>(entityRouteWaypointList_->count()));
+    for (int index = 0; index < entityRouteWaypointList_->count(); ++index) {
+        auto* item = entityRouteWaypointList_->item(index);
+        route.push_back({
+            item->data(Qt::UserRole).toString().toStdString(),
+            {
+                item->data(Qt::UserRole + 1).toString().toDouble(),
+                item->data(Qt::UserRole + 2).toString().toDouble(),
+            },
+            item->data(Qt::UserRole + 3).toString().toDouble(),
+        });
+    }
+    return route;
+}
+
+bool MainWindow::addRouteWaypoint()
+{
+    if (selectedEntityId_.empty()) {
+        return false;
+    }
+
+    fm::app::EntityKinematicsDefinition::RouteWaypointDefinition waypoint;
+    QString errorMessage;
+    if (!buildRouteWaypointDefinitionFromInputs(waypoint, errorMessage)) {
+        QMessageBox::warning(this, QStringLiteral("航点无效"), errorMessage);
+        return false;
+    }
+
+    auto* item = new QListWidgetItem(formatRouteWaypointListEntry(waypoint));
+    item->setData(Qt::UserRole, QString::fromStdString(waypoint.name));
+    item->setData(Qt::UserRole + 1, QString::number(waypoint.position.x, 'f', 2));
+    item->setData(Qt::UserRole + 2, QString::number(waypoint.position.y, 'f', 2));
+    item->setData(Qt::UserRole + 3, QString::number(waypoint.loiterSeconds, 'f', 2));
+    entityRouteWaypointList_->addItem(item);
+    entityRouteWaypointList_->setCurrentItem(item);
+    refreshRouteWaypointPreview();
+    return true;
+}
+
+bool MainWindow::updateSelectedRouteWaypoint()
+{
+    auto* item = entityRouteWaypointList_->currentItem();
+    if (item == nullptr) {
+        return false;
+    }
+
+    fm::app::EntityKinematicsDefinition::RouteWaypointDefinition waypoint;
+    QString errorMessage;
+    if (!buildRouteWaypointDefinitionFromInputs(waypoint, errorMessage)) {
+        QMessageBox::warning(this, QStringLiteral("航点无效"), errorMessage);
+        return false;
+    }
+
+    item->setText(formatRouteWaypointListEntry(waypoint));
+    item->setData(Qt::UserRole, QString::fromStdString(waypoint.name));
+    item->setData(Qt::UserRole + 1, QString::number(waypoint.position.x, 'f', 2));
+    item->setData(Qt::UserRole + 2, QString::number(waypoint.position.y, 'f', 2));
+    item->setData(Qt::UserRole + 3, QString::number(waypoint.loiterSeconds, 'f', 2));
+    refreshRouteWaypointPreview();
+    return true;
+}
+
+bool MainWindow::removeSelectedRouteWaypoint()
+{
+    auto* item = entityRouteWaypointList_->currentItem();
+    if (item == nullptr) {
+        return false;
+    }
+
+    delete entityRouteWaypointList_->takeItem(entityRouteWaypointList_->row(item));
+    refreshRouteWaypointPreview();
+    return true;
+}
+
+bool MainWindow::moveSelectedRouteWaypointUp()
+{
+    const int currentRow = entityRouteWaypointList_->currentRow();
+    if (currentRow <= 0) {
+        return false;
+    }
+
+    auto* item = entityRouteWaypointList_->takeItem(currentRow);
+    entityRouteWaypointList_->insertItem(currentRow - 1, item);
+    entityRouteWaypointList_->setCurrentItem(item);
+    refreshRouteWaypointPreview();
+    return true;
+}
+
+bool MainWindow::moveSelectedRouteWaypointDown()
+{
+    const int currentRow = entityRouteWaypointList_->currentRow();
+    if (currentRow < 0 || currentRow + 1 >= entityRouteWaypointList_->count()) {
+        return false;
+    }
+
+    auto* item = entityRouteWaypointList_->takeItem(currentRow);
+    entityRouteWaypointList_->insertItem(currentRow + 1, item);
+    entityRouteWaypointList_->setCurrentItem(item);
+    refreshRouteWaypointPreview();
+    return true;
+}
+
+void MainWindow::clearRouteWaypoints()
+{
+    entityRouteWaypointList_->clear();
+    entityRouteWaypointNameEdit_->clear();
+    entityRouteWaypointXEdit_->clear();
+    entityRouteWaypointYEdit_->clear();
+    entityRouteWaypointLoiterEdit_->clear();
+    refreshRouteWaypointPreview();
+}
+
+bool MainWindow::addEntityFromEditor()
+{
+    const auto* scenario = session_.scenarioDefinition();
+    if (scenario == nullptr) {
+        return false;
+    }
+
+    std::size_t candidateIndex = scenario->entities.size() + 1;
+    std::string entityId;
+    while (true) {
+        entityId = QStringLiteral("entity-%1").arg(candidateIndex).toStdString();
+        bool exists = false;
+        for (const auto& entity : scenario->entities) {
+            if (entity.identity.id == entityId) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) {
+            break;
+        }
+        ++candidateIndex;
+    }
+
+    fm::app::EntityDefinition entityDefinition;
+    entityDefinition.identity.id = entityId;
+    entityDefinition.identity.displayName = QStringLiteral("New Entity %1").arg(candidateIndex).toStdString();
+    entityDefinition.identity.category = "aircraft";
+    entityDefinition.identity.colorHex = "#607D8B";
+    entityDefinition.kinematics.maxSpeedMetersPerSecond = 12.0;
+    entityDefinition.kinematics.maxTurnRateDegreesPerSecond = 180.0;
+    entityDefinition.sensor.fieldOfViewDegrees = 360.0;
+    entityDefinition.sensor.enabled = false;
+    entityDefinition.mission.behavior = "patrol";
+
+    timer_->stop();
+    replaySnapshotIndex_ = -1;
+    if (!session_.addEntityDefinition(std::move(entityDefinition))) {
+        QMessageBox::warning(this, QStringLiteral("新增实体失败"), session_.lastError());
+        return false;
+    }
+
+    setUnsavedChanges(true);
+    selectedEntityId_ = entityId;
+    forceFitViewOnNextRefresh_ = true;
+    updateEntityList();
+    updateEntityEditor();
+    updateTaskEditor();
+    updateEntityDetails();
+    updateRecordingSummary();
+    updateLogView();
+    refreshScene();
+    updateStatus();
+    return true;
+}
+
+bool MainWindow::removeSelectedEntity()
+{
+    if (selectedEntityId_.empty()) {
+        return false;
+    }
+
+    if (QMessageBox::question(this,
+                              QStringLiteral("删除实体"),
+                              QStringLiteral("确定删除当前实体 %1 吗？").arg(QString::fromStdString(selectedEntityId_)))
+        != QMessageBox::Yes) {
+        return false;
+    }
+
+    timer_->stop();
+    replaySnapshotIndex_ = -1;
+    const std::string removedId = selectedEntityId_;
+    if (!session_.removeEntityDefinition(removedId)) {
+        QMessageBox::warning(this, QStringLiteral("删除实体失败"), session_.lastError());
+        return false;
+    }
+
+    setUnsavedChanges(true);
+    selectedEntityId_.clear();
+    forceFitViewOnNextRefresh_ = true;
+    updateEntityList();
+    updateEntityEditor();
+    updateTaskEditor();
+    updateEntityDetails();
+    updateRecordingSummary();
+    updateLogView();
+    refreshScene();
+    updateStatus();
+    return true;
+}
+
+bool MainWindow::applyScenarioEditorChanges()
+{
+    const auto* scenario = session_.scenarioDefinition();
+    if (scenario == nullptr) {
+        return false;
+    }
+
+    auto parseDouble = [this](QLineEdit* edit, const QString& fieldName, bool nonNegative, double& target) -> bool {
+        bool ok = false;
+        const double value = edit->text().trimmed().toDouble(&ok);
+        if (!ok) {
+            QMessageBox::warning(this, QStringLiteral("场景参数无效"),
+                                 QStringLiteral("字段“%1”需要填写数字。").arg(fieldName));
+            return false;
+        }
+        if (nonNegative && value < 0.0) {
+            QMessageBox::warning(this, QStringLiteral("场景参数无效"),
+                                 QStringLiteral("字段“%1”不能为负数。").arg(fieldName));
+            return false;
+        }
+        target = value;
+        return true;
+    };
+
+    fm::app::ScenarioDefinition scenarioDefinition = *scenario;
+    scenarioDefinition.name = scenarioNameEdit_->text().trimmed().toStdString();
+    scenarioDefinition.description = scenarioDescriptionEdit_->toPlainText().trimmed().toStdString();
+    scenarioDefinition.environment.timeOfDay = scenarioTimeOfDayEdit_->text().trimmed().toStdString();
+    scenarioDefinition.environment.weather = scenarioWeatherEdit_->text().trimmed().toStdString();
+
+    if (scenarioDefinition.name.empty()) {
+        QMessageBox::warning(this, QStringLiteral("场景参数无效"), QStringLiteral("场景名称不能为空。"));
+        return false;
+    }
+
+    if (!parseDouble(scenarioVisibilityEdit_, QStringLiteral("可视距离"), true, scenarioDefinition.environment.visibilityMeters)
+        || !parseDouble(scenarioWindXEdit_, QStringLiteral("风 X"), false, scenarioDefinition.environment.wind.x)
+        || !parseDouble(scenarioWindYEdit_, QStringLiteral("风 Y"), false, scenarioDefinition.environment.wind.y)
+        || !parseDouble(scenarioBoundsMinXEdit_, QStringLiteral("边界最小 X"), false, scenarioDefinition.mapBounds.minimum.x)
+        || !parseDouble(scenarioBoundsMinYEdit_, QStringLiteral("边界最小 Y"), false, scenarioDefinition.mapBounds.minimum.y)
+        || !parseDouble(scenarioBoundsMaxXEdit_, QStringLiteral("边界最大 X"), false, scenarioDefinition.mapBounds.maximum.x)
+        || !parseDouble(scenarioBoundsMaxYEdit_, QStringLiteral("边界最大 Y"), false, scenarioDefinition.mapBounds.maximum.y)) {
+        return false;
+    }
+
+    if (scenarioDefinition.mapBounds.minimum.x > scenarioDefinition.mapBounds.maximum.x
+        || scenarioDefinition.mapBounds.minimum.y > scenarioDefinition.mapBounds.maximum.y) {
+        QMessageBox::warning(this, QStringLiteral("场景参数无效"), QStringLiteral("地图边界最小值不能大于最大值。"));
+        return false;
+    }
+
+    timer_->stop();
+    replaySnapshotIndex_ = -1;
+    if (!session_.updateScenarioDefinition(std::move(scenarioDefinition))) {
+        QMessageBox::warning(this, QStringLiteral("场景应用失败"), session_.lastError());
+        return false;
+    }
+
+    setUnsavedChanges(true);
+    forceFitViewOnNextRefresh_ = true;
+    updateScenarioEditor();
+    updateEntityList();
+    updateEntityEditor();
+    updateTaskEditor();
+    updateEntityDetails();
+    updateRecordingSummary();
+    updateLogView();
+    refreshScene();
+    updateStatus();
+    return true;
 }
 
 void MainWindow::updateTaskEditor()
@@ -1642,8 +2346,97 @@ bool MainWindow::applyTaskEditorChanges()
         return false;
     }
 
+    setUnsavedChanges(true);
     forceFitViewOnNextRefresh_ = true;
     updateEntityList();
+    updateTaskEditor();
+    updateEntityDetails();
+    updateRecordingSummary();
+    updateLogView();
+    refreshScene();
+    updateStatus();
+    return true;
+}
+
+bool MainWindow::applyEntityEditorChanges()
+{
+    if (selectedEntityId_.empty()) {
+        return false;
+    }
+
+    const auto* scenario = session_.scenarioDefinition();
+    if (scenario == nullptr) {
+        return false;
+    }
+
+    const fm::app::EntityDefinition* selectedDefinition = nullptr;
+    for (const auto& entity : scenario->entities) {
+        if (entity.identity.id == selectedEntityId_) {
+            selectedDefinition = &entity;
+            break;
+        }
+    }
+
+    if (selectedDefinition == nullptr) {
+        return false;
+    }
+
+    auto parseDouble = [this](QLineEdit* edit, const QString& fieldName, bool nonNegative, double& target) -> bool {
+        bool ok = false;
+        const double value = edit->text().trimmed().toDouble(&ok);
+        if (!ok) {
+            QMessageBox::warning(this, QStringLiteral("实体参数无效"),
+                                 QStringLiteral("字段“%1”需要填写数字。").arg(fieldName));
+            return false;
+        }
+        if (nonNegative && value < 0.0) {
+            QMessageBox::warning(this, QStringLiteral("实体参数无效"),
+                                 QStringLiteral("字段“%1”不能为负数。").arg(fieldName));
+            return false;
+        }
+        target = value;
+        return true;
+    };
+
+    fm::app::EntityDefinition entityDefinition = *selectedDefinition;
+    entityDefinition.identity.displayName = entityDisplayNameEdit_->text().trimmed().toStdString();
+    entityDefinition.identity.side = entitySideEdit_->text().trimmed().toStdString();
+    entityDefinition.identity.category = entityCategoryEdit_->text().trimmed().toStdString();
+    entityDefinition.identity.role = entityRoleEdit_->text().trimmed().toStdString();
+    entityDefinition.identity.colorHex = entityColorEdit_->text().trimmed().toStdString();
+    entityDefinition.sensor.enabled = entitySensorEnabledCheckBox_->isChecked();
+    entityDefinition.sensor.type = entitySensorTypeEdit_->text().trimmed().toStdString();
+
+    if (!parseDouble(entityPositionXEdit_, QStringLiteral("位置 X"), false, entityDefinition.kinematics.position.x)
+        || !parseDouble(entityPositionYEdit_, QStringLiteral("位置 Y"), false, entityDefinition.kinematics.position.y)
+        || !parseDouble(entityVelocityXEdit_, QStringLiteral("速度 X"), false, entityDefinition.kinematics.velocity.x)
+        || !parseDouble(entityVelocityYEdit_, QStringLiteral("速度 Y"), false, entityDefinition.kinematics.velocity.y)
+        || !parseDouble(entityHeadingEdit_, QStringLiteral("航向"), false, entityDefinition.kinematics.headingDegrees)
+        || !parseDouble(entityMaxSpeedEdit_, QStringLiteral("最大速度"), true, entityDefinition.kinematics.maxSpeedMetersPerSecond)
+        || !parseDouble(entityMaxTurnRateEdit_, QStringLiteral("最大转率"), true, entityDefinition.kinematics.maxTurnRateDegreesPerSecond)
+        || !parseDouble(entitySensorRangeEdit_, QStringLiteral("传感器距离"), true, entityDefinition.sensor.rangeMeters)
+        || !parseDouble(entitySensorFieldOfViewEdit_, QStringLiteral("传感器视场"), true, entityDefinition.sensor.fieldOfViewDegrees)) {
+        return false;
+    }
+
+    if (entityDefinition.sensor.fieldOfViewDegrees > 360.0) {
+        QMessageBox::warning(this, QStringLiteral("实体参数无效"), QStringLiteral("传感器视场不能超过 360 度。"));
+        return false;
+    }
+
+    entityDefinition.kinematics.route = routeWaypointDefinitionsFromEditor();
+
+    timer_->stop();
+    replaySnapshotIndex_ = -1;
+    if (!session_.updateEntityDefinition(selectedEntityId_, std::move(entityDefinition))) {
+        QMessageBox::warning(this, QStringLiteral("实体应用失败"), session_.lastError());
+        return false;
+    }
+
+    setUnsavedChanges(true);
+    forceFitViewOnNextRefresh_ = true;
+    updateEntityList();
+    updateEntityEditor();
     updateTaskEditor();
     updateEntityDetails();
     updateRecordingSummary();

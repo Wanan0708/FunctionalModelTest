@@ -1,13 +1,13 @@
 #include <QApplication>
 
-#include "ui/widgets/MainWindow.h"
+#include "ui/widgets/WorkbenchWindow.h"
 
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
 
-    fm::ui::MainWindow window;
-    window.showMaximized();
+    fm::ui::WorkbenchWindow window;
+    window.show();
 
     return app.exec();
 }

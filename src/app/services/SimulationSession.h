@@ -85,6 +85,10 @@ public:
 
     bool loadScenario(const QString& filePath);
     const ScenarioDefinition* scenarioDefinition() const;
+    bool updateScenarioDefinition(ScenarioDefinition scenarioDefinition);
+    bool addEntityDefinition(EntityDefinition entityDefinition);
+    bool removeEntityDefinition(const std::string& entityId);
+    bool updateEntityDefinition(const std::string& entityId, EntityDefinition entityDefinition);
     bool updateEntityMissionDefinition(const std::string& entityId, EntityMissionDefinition missionDefinition);
     bool saveScenarioToFile(const QString& filePath);
     void start();

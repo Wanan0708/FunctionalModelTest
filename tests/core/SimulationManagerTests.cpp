@@ -39,6 +39,9 @@ private slots:
     void scenarioLoaderSupportsLegacyFlatEntityFields();
     void scenarioLoaderRejectsDuplicateEntityIds();
     void simulationSessionTracksTrajectoryDuringStep();
+    void simulationSessionUpdatesScenarioDefinition();
+    void simulationSessionAddsAndRemovesEntityDefinition();
+    void simulationSessionUpdatesEntityDefinition();
     void simulationSessionUpdatesEntityMissionDefinition();
     void simulationSessionFollowsRouteWaypoints();
     void simulationSessionUpdatesFixedTimeStep();
@@ -1101,6 +1104,224 @@ void SimulationManagerTests::simulationSessionUpdatesEntityMissionDefinition()
     const auto states = session.renderStates();
     QCOMPARE(states.size(), std::size_t {1});
     QCOMPARE(states.front().missionBehavior, std::string("transit"));
+}
+
+void SimulationManagerTests::simulationSessionUpdatesScenarioDefinition()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    QFile scenarioFile(tempDir.path() + "/scenario-edit.json");
+    QVERIFY(scenarioFile.open(QIODevice::WriteOnly));
+    scenarioFile.write(R"({
+        "name": "Baseline Scenario",
+        "description": "Original description",
+        "environment": {
+            "timeOfDay": "day",
+            "weather": "clear",
+            "visibilityMeters": 25000.0,
+            "wind": {"x": 2.0, "y": -1.0}
+        },
+        "mapBounds": {
+            "min": {"x": -20.0, "y": -15.0},
+            "max": {"x": 40.0, "y": 35.0}
+        },
+        "entities": [
+            {
+                "identity": {
+                    "id": "blue-1",
+                    "displayName": "Blue One"
+                },
+                "kinematics": {
+                    "position": {"x": 0.0, "y": 0.0},
+                    "velocity": {"x": 1.0, "y": 0.0},
+                    "headingDegrees": 0.0
+                },
+                "mission": {
+                    "behavior": "patrol"
+                }
+            }
+        ]
+    })");
+    scenarioFile.close();
+
+    fm::app::SimulationSession session(1.0);
+    QVERIFY(session.loadScenario(scenarioFile.fileName()));
+
+    fm::app::ScenarioDefinition updatedScenario = *session.scenarioDefinition();
+    updatedScenario.name = "Edited Scenario";
+    updatedScenario.description = "Edited description";
+    updatedScenario.environment.timeOfDay = "dusk";
+    updatedScenario.environment.weather = "rain";
+    updatedScenario.environment.visibilityMeters = 18000.0;
+    updatedScenario.environment.wind = {-4.0, 3.5};
+    updatedScenario.mapBounds.minimum = {-50.0, -25.0};
+    updatedScenario.mapBounds.maximum = {55.0, 42.0};
+
+    QVERIFY(session.updateScenarioDefinition(updatedScenario));
+    QVERIFY(session.scenarioDefinition() != nullptr);
+    QCOMPARE(session.scenarioDefinition()->name, std::string("Edited Scenario"));
+    QCOMPARE(session.scenarioDefinition()->description, std::string("Edited description"));
+    QCOMPARE(session.scenarioDefinition()->environment.timeOfDay, std::string("dusk"));
+    QCOMPARE(session.scenarioDefinition()->environment.weather, std::string("rain"));
+    QVERIFY(std::abs(session.scenarioDefinition()->environment.visibilityMeters - 18000.0) < 1e-9);
+    QVERIFY(std::abs(session.scenarioDefinition()->mapBounds.minimum.x + 50.0) < 1e-9);
+    QVERIFY(std::abs(session.scenarioDefinition()->mapBounds.maximum.y - 42.0) < 1e-9);
+    QCOMPARE(session.scenarioDefinition()->entities.size(), std::size_t {1});
+
+    const auto states = session.renderStates();
+    QCOMPARE(states.size(), std::size_t {1});
+    QCOMPARE(states.front().id, std::string("blue-1"));
+}
+
+void SimulationManagerTests::simulationSessionUpdatesEntityDefinition()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    QFile scenarioFile(tempDir.path() + "/entity-edit.json");
+    QVERIFY(scenarioFile.open(QIODevice::WriteOnly));
+    scenarioFile.write(R"({
+        "name": "Entity Edit Test",
+        "entities": [
+            {
+                "identity": {
+                    "id": "blue-1",
+                    "displayName": "Blue One",
+                    "side": "blue",
+                    "category": "aircraft",
+                    "role": "screen",
+                    "color": "#2E86AB"
+                },
+                "kinematics": {
+                    "position": {"x": 0.0, "y": 0.0},
+                    "velocity": {"x": 2.0, "y": 0.0},
+                    "headingDegrees": 0.0,
+                    "maxSpeedMetersPerSecond": 12.0,
+                    "maxTurnRateDegreesPerSecond": 90.0,
+                    "route": [
+                        {
+                            "name": "wp-1",
+                            "position": {"x": 2.0, "y": 0.0},
+                            "loiterSeconds": 0.0
+                        }
+                    ]
+                },
+                "sensor": {
+                    "type": "radar",
+                    "rangeMeters": 20.0,
+                    "fieldOfViewDegrees": 120.0,
+                    "enabled": true
+                },
+                "mission": {
+                    "objective": "Hold route",
+                    "behavior": "patrol"
+                }
+            }
+        ]
+    })");
+    scenarioFile.close();
+
+    fm::app::SimulationSession session(1.0);
+    QVERIFY(session.loadScenario(scenarioFile.fileName()));
+
+    fm::app::EntityDefinition updatedEntity = session.scenarioDefinition()->entities.front();
+    updatedEntity.identity.displayName = "Blue Lead";
+    updatedEntity.identity.side = "gold";
+    updatedEntity.identity.colorHex = "#C99A2E";
+    updatedEntity.kinematics.position = {5.0, -3.0};
+    updatedEntity.kinematics.velocity = {0.5, 1.5};
+    updatedEntity.kinematics.headingDegrees = 72.0;
+    updatedEntity.kinematics.route = {
+        {"gate-a", {7.0, -1.0}, 4.0},
+        {"gate-b", {9.5, 2.0}, 0.0},
+    };
+    updatedEntity.sensor.type = "eo";
+    updatedEntity.sensor.rangeMeters = 8.0;
+    updatedEntity.sensor.fieldOfViewDegrees = 60.0;
+
+    QVERIFY(session.updateEntityDefinition("blue-1", updatedEntity));
+    QVERIFY(session.scenarioDefinition() != nullptr);
+    QCOMPARE(session.scenarioDefinition()->entities.front().identity.displayName, std::string("Blue Lead"));
+    QCOMPARE(session.scenarioDefinition()->entities.front().identity.side, std::string("gold"));
+    QVERIFY(std::abs(session.scenarioDefinition()->entities.front().sensor.rangeMeters - 8.0) < 1e-9);
+    QCOMPARE(session.scenarioDefinition()->entities.front().kinematics.route.size(), std::size_t {2});
+    QCOMPARE(session.scenarioDefinition()->entities.front().kinematics.route.front().name, std::string("gate-a"));
+    QVERIFY(std::abs(session.scenarioDefinition()->entities.front().kinematics.route.front().loiterSeconds - 4.0) < 1e-9);
+
+    const auto states = session.renderStates();
+    QCOMPARE(states.size(), std::size_t {1});
+    QCOMPARE(states.front().displayName, std::string("Blue Lead"));
+    QCOMPARE(states.front().side, std::string("gold"));
+    QVERIFY(std::abs(states.front().position.x - 5.0) < 1e-9);
+    QVERIFY(std::abs(states.front().position.y + 3.0) < 1e-9);
+    QVERIFY(std::abs(states.front().sensorRangeMeters - 8.0) < 1e-9);
+    QVERIFY(std::abs(states.front().sensorFieldOfViewDegrees - 60.0) < 1e-9);
+    QCOMPARE(states.front().routeWaypoints.size(), std::size_t {2});
+    QCOMPARE(states.front().routeWaypoints.front().name, std::string("gate-a"));
+    QVERIFY(std::abs(states.front().routeWaypoints.front().position.x - 7.0) < 1e-9);
+}
+
+void SimulationManagerTests::simulationSessionAddsAndRemovesEntityDefinition()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+
+    QFile scenarioFile(tempDir.path() + "/entity-add-remove.json");
+    QVERIFY(scenarioFile.open(QIODevice::WriteOnly));
+    scenarioFile.write(R"({
+        "name": "Entity Add Remove Test",
+        "entities": [
+            {
+                "identity": {
+                    "id": "blue-1",
+                    "displayName": "Blue One"
+                },
+                "kinematics": {
+                    "position": {"x": 0.0, "y": 0.0},
+                    "velocity": {"x": 0.0, "y": 0.0},
+                    "headingDegrees": 0.0
+                },
+                "mission": {
+                    "behavior": "patrol"
+                }
+            }
+        ]
+    })");
+    scenarioFile.close();
+
+    fm::app::SimulationSession session(1.0);
+    QVERIFY(session.loadScenario(scenarioFile.fileName()));
+
+    fm::app::EntityDefinition newEntity;
+    newEntity.identity.id = "green-1";
+    newEntity.identity.displayName = "Green One";
+    newEntity.identity.side = "green";
+    newEntity.identity.category = "aircraft";
+    newEntity.identity.colorHex = "#4C956C";
+    newEntity.kinematics.position = {6.0, 4.0};
+    newEntity.kinematics.velocity = {1.0, 0.5};
+    newEntity.kinematics.maxSpeedMetersPerSecond = 10.0;
+    newEntity.kinematics.maxTurnRateDegreesPerSecond = 120.0;
+    newEntity.sensor.enabled = true;
+    newEntity.sensor.rangeMeters = 9.0;
+    newEntity.sensor.fieldOfViewDegrees = 90.0;
+    newEntity.mission.behavior = "patrol";
+
+    QVERIFY(session.addEntityDefinition(newEntity));
+    QVERIFY(session.scenarioDefinition() != nullptr);
+    QCOMPARE(session.scenarioDefinition()->entities.size(), std::size_t {2});
+
+    auto states = session.renderStates();
+    QCOMPARE(states.size(), std::size_t {2});
+
+    QVERIFY(session.removeEntityDefinition("blue-1"));
+    QCOMPARE(session.scenarioDefinition()->entities.size(), std::size_t {1});
+    QCOMPARE(session.scenarioDefinition()->entities.front().identity.id, std::string("green-1"));
+
+    states = session.renderStates();
+    QCOMPARE(states.size(), std::size_t {1});
+    QCOMPARE(states.front().id, std::string("green-1"));
 }
 
 void SimulationManagerTests::simulationSessionFollowsRouteWaypoints()

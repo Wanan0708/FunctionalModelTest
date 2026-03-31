@@ -6,6 +6,7 @@
 
 #include "app/services/SimulationSession.h"
 
+class QCloseEvent;
 class QGraphicsScene;
 class QGraphicsView;
 class QCheckBox;
@@ -18,17 +19,36 @@ class QListWidgetItem;
 class QPlainTextEdit;
 class QPushButton;
 class QTimer;
+class QToolBox;
 
 namespace fm::ui {
 
+class EntityEditorPanel;
+class MissionEditorPanel;
+class ScenarioEditorPanel;
+class SimulationControlPanel;
+
 class MainWindow final : public QMainWindow {
 public:
-    MainWindow();
+    enum class Mode {
+        ScenarioEditor,
+        Simulation,
+    };
+
+    explicit MainWindow(Mode mode = Mode::Simulation);
     ~MainWindow() override;
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
 
 private:
     void buildUi();
     void connectSignals();
+    void applyWindowMode();
+    void updateWindowTitle();
+    void setUnsavedChanges(bool hasUnsavedChanges);
+    bool promptToSaveUnsavedChanges(const QString& reason);
+    bool saveScenarioInteractively();
     void loadDefaultScenario();
     const fm::app::SimulationSnapshot* currentSnapshot() const;
     std::vector<fm::app::EntityRenderState> currentRenderStates() const;
@@ -36,17 +56,42 @@ private:
     bool isReplayMode() const;
     void refreshScene();
     void updateEntityList();
+    void updateScenarioEditor();
+    void updateEntityEditor();
+    void updateRouteWaypointEditorState();
+    void refreshRouteWaypointPreview();
+    bool buildRouteWaypointDefinitionFromInputs(fm::app::EntityKinematicsDefinition::RouteWaypointDefinition& waypoint,
+                                               QString& errorMessage) const;
+    std::vector<fm::app::EntityKinematicsDefinition::RouteWaypointDefinition> routeWaypointDefinitionsFromEditor() const;
     void updateTaskEditor();
     void updateTaskEditorFieldState();
+    bool addEntityFromEditor();
+    bool removeSelectedEntity();
+    bool applyScenarioEditorChanges();
+    bool addRouteWaypoint();
+    bool updateSelectedRouteWaypoint();
+    bool removeSelectedRouteWaypoint();
+    bool moveSelectedRouteWaypointUp();
+    bool moveSelectedRouteWaypointDown();
+    void clearRouteWaypoints();
+    bool applyEntityEditorChanges();
     bool applyTaskEditorChanges();
     void updateEntityDetails();
     void updateLogView();
     void updateRecordingSummary();
     void updateStatus();
 
+    Mode mode_ {Mode::Simulation};
     fm::app::SimulationSession session_;
+    SimulationControlPanel* simulationControlPanel_ {nullptr};
+    ScenarioEditorPanel* scenarioEditorPanel_ {nullptr};
+    EntityEditorPanel* entityEditorPanel_ {nullptr};
+    MissionEditorPanel* missionEditorPanel_ {nullptr};
     QGraphicsScene* scene_ {nullptr};
     QGraphicsView* view_ {nullptr};
+    QWidget* recordingPanel_ {nullptr};
+    QWidget* logPanel_ {nullptr};
+    QToolBox* sideToolBox_ {nullptr};
     QListWidget* entityList_ {nullptr};
     QCheckBox* showTrailsCheckBox_ {nullptr};
     QCheckBox* autoFitViewCheckBox_ {nullptr};
@@ -71,8 +116,54 @@ private:
     QLabel* statusLabel_ {nullptr};
     QLabel* scenarioLabel_ {nullptr};
     QLabel* entityDetailsLabel_ {nullptr};
+    QLabel* scenarioEditorHintLabel_ {nullptr};
     QLabel* taskEditorHintLabel_ {nullptr};
+    QLabel* entityEditorHintLabel_ {nullptr};
     QLabel* recordingSummaryLabel_ {nullptr};
+    QLineEdit* scenarioNameEdit_ {nullptr};
+    QPlainTextEdit* scenarioDescriptionEdit_ {nullptr};
+    QLineEdit* scenarioTimeOfDayEdit_ {nullptr};
+    QLineEdit* scenarioWeatherEdit_ {nullptr};
+    QLineEdit* scenarioVisibilityEdit_ {nullptr};
+    QLineEdit* scenarioWindXEdit_ {nullptr};
+    QLineEdit* scenarioWindYEdit_ {nullptr};
+    QLineEdit* scenarioBoundsMinXEdit_ {nullptr};
+    QLineEdit* scenarioBoundsMinYEdit_ {nullptr};
+    QLineEdit* scenarioBoundsMaxXEdit_ {nullptr};
+    QLineEdit* scenarioBoundsMaxYEdit_ {nullptr};
+    QPushButton* applyScenarioButton_ {nullptr};
+    QLineEdit* entityIdEdit_ {nullptr};
+    QLineEdit* entityDisplayNameEdit_ {nullptr};
+    QLineEdit* entitySideEdit_ {nullptr};
+    QLineEdit* entityCategoryEdit_ {nullptr};
+    QLineEdit* entityRoleEdit_ {nullptr};
+    QLineEdit* entityColorEdit_ {nullptr};
+    QLineEdit* entityPositionXEdit_ {nullptr};
+    QLineEdit* entityPositionYEdit_ {nullptr};
+    QLineEdit* entityVelocityXEdit_ {nullptr};
+    QLineEdit* entityVelocityYEdit_ {nullptr};
+    QLineEdit* entityHeadingEdit_ {nullptr};
+    QLineEdit* entityMaxSpeedEdit_ {nullptr};
+    QLineEdit* entityMaxTurnRateEdit_ {nullptr};
+    QCheckBox* entitySensorEnabledCheckBox_ {nullptr};
+    QLineEdit* entitySensorTypeEdit_ {nullptr};
+    QLineEdit* entitySensorRangeEdit_ {nullptr};
+    QLineEdit* entitySensorFieldOfViewEdit_ {nullptr};
+    QListWidget* entityRouteWaypointList_ {nullptr};
+    QLineEdit* entityRouteWaypointNameEdit_ {nullptr};
+    QLineEdit* entityRouteWaypointXEdit_ {nullptr};
+    QLineEdit* entityRouteWaypointYEdit_ {nullptr};
+    QLineEdit* entityRouteWaypointLoiterEdit_ {nullptr};
+    QPlainTextEdit* entityRouteEdit_ {nullptr};
+    QPushButton* addRouteWaypointButton_ {nullptr};
+    QPushButton* updateRouteWaypointButton_ {nullptr};
+    QPushButton* removeRouteWaypointButton_ {nullptr};
+    QPushButton* moveRouteWaypointUpButton_ {nullptr};
+    QPushButton* moveRouteWaypointDownButton_ {nullptr};
+    QPushButton* clearRouteWaypointsButton_ {nullptr};
+    QPushButton* addEntityButton_ {nullptr};
+    QPushButton* removeEntityButton_ {nullptr};
+    QPushButton* applyEntityButton_ {nullptr};
     QLineEdit* taskObjectiveEdit_ {nullptr};
     QComboBox* taskBehaviorComboBox_ {nullptr};
     QComboBox* taskTargetComboBox_ {nullptr};
@@ -91,6 +182,7 @@ private:
     std::string selectedEntityId_;
     int replaySnapshotIndex_ {-1};
     bool forceFitViewOnNextRefresh_ {true};
+    bool hasUnsavedChanges_ {false};
 };
 
 }  // namespace fm::ui
