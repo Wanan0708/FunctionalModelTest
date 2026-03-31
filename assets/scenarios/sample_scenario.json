@@ -1,0 +1,274 @@
+{
+  "name": "Harbor Intercept Demonstration",
+  "description": "Blue patrol pair screens the harbor entrance while a green intruder probes the corridor, a relay aircraft stabilizes an orbit, and a reserve element activates only after the relay task completes.",
+  "environment": {
+    "timeOfDay": "dawn",
+    "weather": "broken-cloud",
+    "visibilityMeters": 22000.0,
+    "wind": { "x": 1.8, "y": -0.6 }
+  },
+  "mapBounds": {
+    "min": { "x": -80.0, "y": -40.0 },
+    "max": { "x": 90.0, "y": 60.0 }
+  },
+  "entities": [
+    {
+      "identity": {
+        "id": "blue-lead",
+        "displayName": "Blue Lead",
+        "side": "blue",
+        "category": "aircraft",
+        "role": "patrol-lead",
+        "color": "#2E86AB",
+        "tags": ["screen", "lead", "armed"]
+      },
+      "kinematics": {
+        "position": { "x": -28.0, "y": -10.0 },
+        "velocity": { "x": 3.8, "y": 1.4 },
+        "headingDegrees": 22.0,
+        "maxSpeedMetersPerSecond": 16.0,
+        "maxTurnRateDegreesPerSecond": 180.0,
+        "route": [
+          {
+            "name": "north-gate",
+            "position": { "x": -32.0, "y": -4.0 },
+            "loiterSeconds": 0.0
+          },
+          {
+            "name": "center-gate",
+            "position": { "x": -12.0, "y": 2.0 },
+            "loiterSeconds": 0.0
+          },
+          {
+            "name": "east-gate",
+            "position": { "x": 6.0, "y": -6.0 },
+            "loiterSeconds": 0.0
+          }
+        ]
+      },
+      "sensor": {
+        "type": "radar",
+        "rangeMeters": 24.0,
+        "fieldOfViewDegrees": 130.0,
+        "enabled": true
+      },
+      "mission": {
+        "objective": "Maintain outer patrol arc north-west of harbor.",
+        "behavior": "patrol"
+      }
+    },
+    {
+      "identity": {
+        "id": "blue-wing",
+        "displayName": "Blue Wing",
+        "side": "blue",
+        "category": "aircraft",
+        "role": "escort",
+        "color": "#57B8FF",
+        "tags": ["screen", "wingman"]
+      },
+      "kinematics": {
+        "position": { "x": -22.0, "y": -16.0 },
+        "velocity": { "x": 3.6, "y": 1.6 },
+        "headingDegrees": 28.0,
+        "maxSpeedMetersPerSecond": 15.0,
+        "maxTurnRateDegreesPerSecond": 180.0,
+        "route": [
+          {
+            "name": "escort-anchor",
+            "position": { "x": -18.0, "y": -8.0 },
+            "loiterSeconds": 0.0
+          },
+          {
+            "name": "escort-turn",
+            "position": { "x": 0.0, "y": -10.0 },
+            "loiterSeconds": 0.0
+          }
+        ]
+      },
+      "sensor": {
+        "type": "radar",
+        "rangeMeters": 20.0,
+        "fieldOfViewDegrees": 110.0,
+        "enabled": true
+      },
+      "mission": {
+        "objective": "Cover Blue Lead blind side and close intercept if contact penetrates screen.",
+        "behavior": "escort",
+        "targetEntityId": "blue-lead",
+        "parameters": {
+          "escortTrailDistanceMeters": 8.0,
+          "escortRightOffsetMeters": 3.0,
+          "escortSlotToleranceMeters": 1.0,
+          "escortCompletionHoldSeconds": 1.5
+        }
+      }
+    },
+    {
+      "identity": {
+        "id": "green-intruder",
+        "displayName": "Green Intruder",
+        "side": "green",
+        "category": "aircraft",
+        "role": "intruder",
+        "color": "#4C956C",
+        "tags": ["probe", "hostile"]
+      },
+      "kinematics": {
+        "position": { "x": 42.0, "y": 22.0 },
+        "velocity": { "x": -3.1, "y": -1.9 },
+        "headingDegrees": 214.0,
+        "maxSpeedMetersPerSecond": 17.0,
+        "maxTurnRateDegreesPerSecond": 180.0,
+        "route": [
+          {
+            "name": "probe-entry",
+            "position": { "x": 28.0, "y": 14.0 },
+            "loiterSeconds": 0.0
+          },
+          {
+            "name": "probe-hold",
+            "position": { "x": 16.0, "y": 6.0 },
+            "loiterSeconds": 0.0
+          }
+        ]
+      },
+      "sensor": {
+        "type": "eo",
+        "rangeMeters": 16.0,
+        "fieldOfViewDegrees": 80.0,
+        "enabled": true
+      },
+      "mission": {
+        "objective": "Probe harbor approach and identify patrol response pattern.",
+        "behavior": "intercept",
+        "targetEntityId": "blue-lead",
+        "parameters": {
+          "interceptCompletionDistanceMeters": 3.0
+        }
+      }
+    },
+    {
+      "identity": {
+        "id": "blue-reserve",
+        "displayName": "Blue Reserve",
+        "side": "blue",
+        "category": "aircraft",
+        "role": "reserve",
+        "color": "#355C7D",
+        "tags": ["reserve", "delayed", "fallback"]
+      },
+      "kinematics": {
+        "position": { "x": -46.0, "y": -24.0 },
+        "velocity": { "x": 2.2, "y": 0.4 },
+        "headingDegrees": 12.0,
+        "maxSpeedMetersPerSecond": 14.0,
+        "maxTurnRateDegreesPerSecond": 180.0,
+        "route": [
+          {
+            "name": "reserve-west",
+            "position": { "x": -30.0, "y": -20.0 },
+            "loiterSeconds": 0.0
+          },
+          {
+            "name": "reserve-center",
+            "position": { "x": -8.0, "y": -12.0 },
+            "loiterSeconds": 0.0
+          },
+          {
+            "name": "reserve-east",
+            "position": { "x": 18.0, "y": -8.0 },
+            "loiterSeconds": 0.0
+          }
+        ]
+      },
+      "sensor": {
+        "type": "radar",
+        "rangeMeters": 18.0,
+        "fieldOfViewDegrees": 120.0,
+        "enabled": true
+      },
+      "mission": {
+        "objective": "Remain in reserve until relay orbit is established, then reinforce the corridor patrol.",
+        "behavior": "patrol",
+        "constraints": {
+          "timeoutSeconds": 20.0,
+          "activateAfter": {
+            "entityId": "gold-relay",
+            "status": "completed"
+          },
+          "replanOnAbort": {
+            "objective": "Fallback to close orbit around Blue Lead if reserve patrol cannot be sustained.",
+            "behavior": "orbit",
+            "targetEntityId": "blue-lead",
+            "timeoutSeconds": 8.0,
+            "parameters": {
+              "orbitRadiusMeters": 9.0,
+              "orbitClockwise": false,
+              "orbitCompletionHoldSeconds": 2.0
+            }
+          },
+          "replanChain": [
+            {
+              "objective": "If orbit fallback also degrades, collapse into close escort on Blue Lead.",
+              "behavior": "escort",
+              "targetEntityId": "blue-lead",
+              "timeoutSeconds": 12.0,
+              "parameters": {
+                "escortTrailDistanceMeters": 5.5,
+                "escortRightOffsetMeters": 2.0
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "identity": {
+        "id": "gold-relay",
+        "displayName": "Gold Relay",
+        "side": "gold",
+        "category": "support-aircraft",
+        "role": "relay",
+        "color": "#C99A2E",
+        "tags": ["support", "relay", "observer"]
+      },
+      "kinematics": {
+        "position": { "x": -6.0, "y": 24.0 },
+        "velocity": { "x": 1.4, "y": -2.2 },
+        "headingDegrees": 300.0,
+        "maxSpeedMetersPerSecond": 12.0,
+        "maxTurnRateDegreesPerSecond": 180.0,
+        "route": [
+          {
+            "name": "relay-north",
+            "position": { "x": -10.0, "y": 28.0 },
+            "loiterSeconds": 0.0
+          },
+          {
+            "name": "relay-south",
+            "position": { "x": 4.0, "y": 18.0 },
+            "loiterSeconds": 0.0
+          }
+        ]
+      },
+      "sensor": {
+        "type": "wide-area-radar",
+        "rangeMeters": 30.0,
+        "fieldOfViewDegrees": 180.0,
+        "enabled": true
+      },
+      "mission": {
+        "objective": "Maintain relay orbit and preserve shared situational awareness.",
+        "behavior": "orbit",
+        "parameters": {
+          "orbitRadiusMeters": 11.0,
+          "orbitClockwise": true,
+          "orbitAcquireToleranceMeters": 1.0,
+          "orbitCompletionToleranceMeters": 2.0,
+          "orbitCompletionHoldSeconds": 2.5
+        }
+      }
+    }
+  ]
+}

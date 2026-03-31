@@ -1,0 +1,40 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 16,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "vs2022-qt514-debug",
+      "displayName": "VS2022 + Qt 5.14 Debug",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build-msvc",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "E:/Softwore/Qt5.14.2/5.14.2/msvc2017_64"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "vs2022-qt514-debug",
+      "configurePreset": "vs2022-qt514-debug",
+      "configuration": "Debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "vs2022-qt514-debug",
+      "configurePreset": "vs2022-qt514-debug",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
