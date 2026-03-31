@@ -47,8 +47,17 @@ public:
     double maxSpeedMetersPerSecond() const;
     void setMaxSpeedMetersPerSecond(double value);
 
+    double maxAccelerationMetersPerSecondSquared() const;
+    void setMaxAccelerationMetersPerSecondSquared(double value);
+
+    double maxDecelerationMetersPerSecondSquared() const;
+    void setMaxDecelerationMetersPerSecondSquared(double value);
+
     double maxTurnRateDegreesPerSecond() const;
     void setMaxTurnRateDegreesPerSecond(double value);
+
+    double radarCrossSectionSquareMeters() const;
+    void setRadarCrossSectionSquareMeters(double value);
 
     void update(UpdatePhase phase, const SimulationUpdateContext& context);
     void clearComponents();
@@ -105,7 +114,10 @@ private:
     Vector2 velocity_;
     double headingDegrees_ {0.0};
     double maxSpeedMetersPerSecond_ {0.0};
+    double maxAccelerationMetersPerSecondSquared_ {0.0};
+    double maxDecelerationMetersPerSecondSquared_ {0.0};
     double maxTurnRateDegreesPerSecond_ {0.0};
+    double radarCrossSectionSquareMeters_ {1.0};
     std::vector<std::unique_ptr<IComponent>> components_;
 };
 

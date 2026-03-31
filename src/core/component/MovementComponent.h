@@ -74,12 +74,16 @@ public:
                       double preferredSpeedMetersPerSecond,
                       double maxSpeedMetersPerSecond,
                       double maxTurnRateDegreesPerSecond,
-                      double arrivalToleranceMeters = 0.5)
+                      double arrivalToleranceMeters = 0.5,
+                      double maxAccelerationMetersPerSecondSquared = 0.0,
+                      double maxDecelerationMetersPerSecondSquared = 0.0)
         : route_(std::move(route))
         , preferredSpeedMetersPerSecond_(preferredSpeedMetersPerSecond)
         , maxSpeedMetersPerSecond_(maxSpeedMetersPerSecond)
         , maxTurnRateDegreesPerSecond_(maxTurnRateDegreesPerSecond)
         , arrivalToleranceMeters_(arrivalToleranceMeters)
+        , maxAccelerationMetersPerSecondSquared_(maxAccelerationMetersPerSecondSquared)
+        , maxDecelerationMetersPerSecondSquared_(maxDecelerationMetersPerSecondSquared)
     {
     }
 
@@ -270,8 +274,8 @@ public:
                                         ? maxSpeedMetersPerSecond_
                                         : preferredSpeedMetersPerSecond_;
             const double desiredSpeed = std::clamp(preferredSpeedMetersPerSecond_, 0.0, speedCap);
-            const double speed = desiredSpeed > 0.0 ? desiredSpeed : speedCap;
-            if (speed <= 0.0) {
+            const double cruiseSpeed = desiredSpeed > 0.0 ? desiredSpeed : speedCap;
+            if (cruiseSpeed <= 0.0) {
                 entity.setVelocity({0.0, 0.0});
                 continue;
             }
@@ -283,6 +287,7 @@ public:
                     targetWaypoint.position.y - entity.position().y,
                 };
                 const auto distanceToTarget = std::hypot(offset.x, offset.y);
+                const double currentSpeed = std::hypot(entity.velocity().x, entity.velocity().y);
                 if (distanceToTarget <= arrivalToleranceMeters_) {
                     entity.setPosition(targetWaypoint.position);
                     entity.setVelocity({0.0, 0.0});
@@ -309,7 +314,9 @@ public:
                 const double newHeadingRadians = newHeadingDegrees * 3.14159265358979323846 / 180.0;
                 const double turnSeverity = std::clamp(std::abs(deltaHeadingDegrees) / 90.0, 0.0, 1.0);
                 const double turnSpeedFactor = 1.0 - 0.45 * turnSeverity;
-                const double maneuverSpeed = speed * turnSpeedFactor;
+                const double desiredApproachSpeed = computeApproachSpeed(distanceToTarget, cruiseSpeed, currentSpeed);
+                const double maneuverTargetSpeed = desiredApproachSpeed * turnSpeedFactor;
+                const double maneuverSpeed = advanceSpeedTowards(currentSpeed, maneuverTargetSpeed, substepDeltaSeconds);
                 const auto newVelocity = Vector2 {std::cos(newHeadingRadians) * maneuverSpeed, std::sin(newHeadingRadians) * maneuverSpeed};
                 const auto moveDistance = maneuverSpeed * substepDeltaSeconds;
                 const auto currentPosition = entity.position();
@@ -349,8 +356,8 @@ private:
                                     ? maxSpeedMetersPerSecond_
                                     : preferredSpeedMetersPerSecond_;
         const double desiredSpeed = std::clamp(preferredSpeedMetersPerSecond_, 0.0, speedCap);
-        const double speed = desiredSpeed > 0.0 ? desiredSpeed : speedCap;
-        if (speed <= 0.0) {
+        const double cruiseSpeed = desiredSpeed > 0.0 ? desiredSpeed : speedCap;
+        if (cruiseSpeed <= 0.0) {
             entity.setVelocity({0.0, 0.0});
             return;
         }
@@ -360,6 +367,7 @@ private:
             guidanceTargetPosition_.y - entity.position().y,
         };
         const auto distanceToTarget = std::hypot(offset.x, offset.y);
+        const double currentSpeed = std::hypot(entity.velocity().x, entity.velocity().y);
         if (distanceToTarget <= arrivalToleranceMeters_) {
             entity.setPosition(guidanceTargetPosition_);
             entity.setVelocity({0.0, 0.0});
@@ -379,7 +387,9 @@ private:
         const double newHeadingRadians = newHeadingDegrees * 3.14159265358979323846 / 180.0;
         const double turnSeverity = std::clamp(std::abs(deltaHeadingDegrees) / 90.0, 0.0, 1.0);
         const double turnSpeedFactor = 1.0 - 0.45 * turnSeverity;
-        const double maneuverSpeed = speed * turnSpeedFactor;
+        const double desiredApproachSpeed = computeApproachSpeed(distanceToTarget, cruiseSpeed, currentSpeed);
+        const double maneuverTargetSpeed = desiredApproachSpeed * turnSpeedFactor;
+        const double maneuverSpeed = advanceSpeedTowards(currentSpeed, maneuverTargetSpeed, deltaSeconds);
         const auto newVelocity = Vector2 {std::cos(newHeadingRadians) * maneuverSpeed, std::sin(newHeadingRadians) * maneuverSpeed};
         const auto currentPosition = entity.position();
         const auto nextPosition = currentPosition + newVelocity * deltaSeconds;
@@ -405,11 +415,13 @@ private:
                                     ? maxSpeedMetersPerSecond_
                                     : preferredSpeedMetersPerSecond_;
         const double desiredSpeed = std::clamp(preferredSpeedMetersPerSecond_, 0.0, speedCap);
-        const double speed = desiredSpeed > 0.0 ? desiredSpeed : speedCap;
-        if (speed <= 0.0) {
+        const double cruiseSpeed = desiredSpeed > 0.0 ? desiredSpeed : speedCap;
+        if (cruiseSpeed <= 0.0) {
             entity.setVelocity({0.0, 0.0});
             return;
         }
+
+        const double currentSpeed = std::hypot(entity.velocity().x, entity.velocity().y);
 
         auto radial = Vector2 {entity.position().x - orbitCenter_.x, entity.position().y - orbitCenter_.y};
         double distanceFromCenter = std::hypot(radial.x, radial.y);
@@ -451,7 +463,8 @@ private:
         const double newHeadingRadians = newHeadingDegrees * 3.14159265358979323846 / 180.0;
         const double turnSeverity = std::clamp(std::abs(deltaHeadingDegrees) / 90.0, 0.0, 1.0);
         const double turnSpeedFactor = 1.0 - 0.35 * turnSeverity;
-        const double maneuverSpeed = speed * turnSpeedFactor;
+        const double maneuverTargetSpeed = cruiseSpeed * turnSpeedFactor;
+        const double maneuverSpeed = advanceSpeedTowards(currentSpeed, maneuverTargetSpeed, deltaSeconds);
         const auto newVelocity = Vector2 {std::cos(newHeadingRadians) * maneuverSpeed, std::sin(newHeadingRadians) * maneuverSpeed};
 
         entity.setHeadingDegrees(newHeadingDegrees);
@@ -477,11 +490,46 @@ private:
         currentWaypointIndex_ = (currentWaypointIndex_ + 1) % route_.size();
     }
 
+    double computeApproachSpeed(double distanceToTarget, double cruiseSpeed, double currentSpeed) const
+    {
+        if (maxDecelerationMetersPerSecondSquared_ <= 0.0) {
+            return cruiseSpeed;
+        }
+
+        const double stoppingDistance = currentSpeed * currentSpeed / (2.0 * maxDecelerationMetersPerSecondSquared_);
+        const double brakingDistance = std::max(0.0, distanceToTarget - arrivalToleranceMeters_);
+        if (brakingDistance > stoppingDistance) {
+            return cruiseSpeed;
+        }
+
+        return std::min(cruiseSpeed, std::sqrt(std::max(0.0, 2.0 * maxDecelerationMetersPerSecondSquared_ * brakingDistance)));
+    }
+
+    double advanceSpeedTowards(double currentSpeed, double targetSpeed, double deltaSeconds) const
+    {
+        const double clampedTargetSpeed = std::clamp(targetSpeed, 0.0, maxSpeedMetersPerSecond_ > 0.0 ? maxSpeedMetersPerSecond_ : targetSpeed);
+        if (clampedTargetSpeed >= currentSpeed) {
+            if (maxAccelerationMetersPerSecondSquared_ <= 0.0) {
+                return clampedTargetSpeed;
+            }
+
+            return std::min(clampedTargetSpeed, currentSpeed + maxAccelerationMetersPerSecondSquared_ * deltaSeconds);
+        }
+
+        if (maxDecelerationMetersPerSecondSquared_ <= 0.0) {
+            return clampedTargetSpeed;
+        }
+
+        return std::max(clampedTargetSpeed, currentSpeed - maxDecelerationMetersPerSecondSquared_ * deltaSeconds);
+    }
+
     std::vector<RouteWaypoint> route_;
     double preferredSpeedMetersPerSecond_ {0.0};
     double maxSpeedMetersPerSecond_ {0.0};
     double maxTurnRateDegreesPerSecond_ {180.0};
     double arrivalToleranceMeters_ {0.5};
+    double maxAccelerationMetersPerSecondSquared_ {0.0};
+    double maxDecelerationMetersPerSecondSquared_ {0.0};
     std::size_t currentWaypointIndex_ {0};
     double remainingLoiterSeconds_ {0.0};
     std::size_t totalWaypointVisits_ {0};

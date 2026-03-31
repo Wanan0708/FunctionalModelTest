@@ -808,12 +808,26 @@ void MainWindow::buildUi()
     entityVelocityXEdit_ = entityEditorPanel_->velocityXEdit();
     entityVelocityYEdit_ = entityEditorPanel_->velocityYEdit();
     entityHeadingEdit_ = entityEditorPanel_->headingEdit();
+    entityPreferredSpeedEdit_ = entityEditorPanel_->preferredSpeedEdit();
     entityMaxSpeedEdit_ = entityEditorPanel_->maxSpeedEdit();
+    entityMaxAccelerationEdit_ = entityEditorPanel_->maxAccelerationEdit();
+    entityMaxDecelerationEdit_ = entityEditorPanel_->maxDecelerationEdit();
     entityMaxTurnRateEdit_ = entityEditorPanel_->maxTurnRateEdit();
+    entityRadarCrossSectionEdit_ = entityEditorPanel_->radarCrossSectionEdit();
     entitySensorEnabledCheckBox_ = entityEditorPanel_->sensorEnabledCheckBox();
     entitySensorTypeEdit_ = entityEditorPanel_->sensorTypeEdit();
     entitySensorRangeEdit_ = entityEditorPanel_->sensorRangeEdit();
     entitySensorFieldOfViewEdit_ = entityEditorPanel_->sensorFieldOfViewEdit();
+    entityRadarPeakPowerEdit_ = entityEditorPanel_->radarPeakPowerEdit();
+    entityRadarAntennaGainEdit_ = entityEditorPanel_->radarAntennaGainEdit();
+    entityRadarCenterFrequencyEdit_ = entityEditorPanel_->radarCenterFrequencyEdit();
+    entityRadarBandwidthEdit_ = entityEditorPanel_->radarBandwidthEdit();
+    entityRadarNoiseFigureEdit_ = entityEditorPanel_->radarNoiseFigureEdit();
+    entityRadarSystemLossEdit_ = entityEditorPanel_->radarSystemLossEdit();
+    entityRadarRequiredSnrEdit_ = entityEditorPanel_->radarRequiredSnrEdit();
+    entityRadarProcessingGainEdit_ = entityEditorPanel_->radarProcessingGainEdit();
+    entityRadarScanRateEdit_ = entityEditorPanel_->radarScanRateEdit();
+    entityRadarReceiverTemperatureEdit_ = entityEditorPanel_->radarReceiverTemperatureEdit();
     entityRouteWaypointList_ = entityEditorPanel_->routeWaypointList();
     entityRouteWaypointNameEdit_ = entityEditorPanel_->routeWaypointNameEdit();
     entityRouteWaypointXEdit_ = entityEditorPanel_->routeWaypointXEdit();
@@ -1736,19 +1750,33 @@ void MainWindow::updateEntityEditor()
         entityVelocityXEdit_->clear();
         entityVelocityYEdit_->clear();
         entityHeadingEdit_->clear();
+        entityPreferredSpeedEdit_->clear();
         entityMaxSpeedEdit_->clear();
+        entityMaxAccelerationEdit_->clear();
+        entityMaxDecelerationEdit_->clear();
         entityMaxTurnRateEdit_->clear();
+        entityRadarCrossSectionEdit_->clear();
         entitySensorEnabledCheckBox_->setChecked(false);
         entitySensorTypeEdit_->clear();
         entitySensorRangeEdit_->clear();
         entitySensorFieldOfViewEdit_->clear();
+        entityRadarPeakPowerEdit_->clear();
+        entityRadarAntennaGainEdit_->clear();
+        entityRadarCenterFrequencyEdit_->clear();
+        entityRadarBandwidthEdit_->clear();
+        entityRadarNoiseFigureEdit_->clear();
+        entityRadarSystemLossEdit_->clear();
+        entityRadarRequiredSnrEdit_->clear();
+        entityRadarProcessingGainEdit_->clear();
+        entityRadarScanRateEdit_->clear();
+        entityRadarReceiverTemperatureEdit_->clear();
         entityRouteWaypointList_->clear();
         entityRouteWaypointNameEdit_->clear();
         entityRouteWaypointXEdit_->clear();
         entityRouteWaypointYEdit_->clear();
         entityRouteWaypointLoiterEdit_->clear();
         entityRouteEdit_->clear();
-        entityEditorHintLabel_->setText(QStringLiteral("选择实体后可编辑基础属性、运动学、传感器和航路。可直接增删改航点，底部显示只读航路预览。"));
+        entityEditorHintLabel_->setText(QStringLiteral("选择实体后可编辑基础属性、运动学、RCS、传感器和航路。可直接增删改航点，底部显示只读航路预览。"));
         applyEntityButton_->setEnabled(false);
         removeEntityButton_->setEnabled(false);
         updateRouteWaypointEditorState();
@@ -1780,12 +1808,26 @@ void MainWindow::updateEntityEditor()
     entityVelocityXEdit_->setText(QString::number(selectedDefinition->kinematics.velocity.x, 'f', 2));
     entityVelocityYEdit_->setText(QString::number(selectedDefinition->kinematics.velocity.y, 'f', 2));
     entityHeadingEdit_->setText(QString::number(selectedDefinition->kinematics.headingDegrees, 'f', 2));
+    entityPreferredSpeedEdit_->setText(QString::number(selectedDefinition->kinematics.preferredSpeedMetersPerSecond, 'f', 2));
     entityMaxSpeedEdit_->setText(QString::number(selectedDefinition->kinematics.maxSpeedMetersPerSecond, 'f', 2));
+    entityMaxAccelerationEdit_->setText(QString::number(selectedDefinition->kinematics.maxAccelerationMetersPerSecondSquared, 'f', 2));
+    entityMaxDecelerationEdit_->setText(QString::number(selectedDefinition->kinematics.maxDecelerationMetersPerSecondSquared, 'f', 2));
     entityMaxTurnRateEdit_->setText(QString::number(selectedDefinition->kinematics.maxTurnRateDegreesPerSecond, 'f', 2));
+    entityRadarCrossSectionEdit_->setText(QString::number(selectedDefinition->signature.radarCrossSectionSquareMeters, 'f', 2));
     entitySensorEnabledCheckBox_->setChecked(selectedDefinition->sensor.enabled);
     entitySensorTypeEdit_->setText(QString::fromStdString(selectedDefinition->sensor.type));
     entitySensorRangeEdit_->setText(QString::number(selectedDefinition->sensor.rangeMeters, 'f', 2));
     entitySensorFieldOfViewEdit_->setText(QString::number(selectedDefinition->sensor.fieldOfViewDegrees, 'f', 2));
+    entityRadarPeakPowerEdit_->setText(QString::number(selectedDefinition->sensor.radar.peakTransmitPowerWatts, 'g', 10));
+    entityRadarAntennaGainEdit_->setText(QString::number(selectedDefinition->sensor.radar.antennaGainDecibels, 'f', 2));
+    entityRadarCenterFrequencyEdit_->setText(QString::number(selectedDefinition->sensor.radar.centerFrequencyHertz, 'g', 10));
+    entityRadarBandwidthEdit_->setText(QString::number(selectedDefinition->sensor.radar.signalBandwidthHertz, 'g', 10));
+    entityRadarNoiseFigureEdit_->setText(QString::number(selectedDefinition->sensor.radar.noiseFigureDecibels, 'f', 2));
+    entityRadarSystemLossEdit_->setText(QString::number(selectedDefinition->sensor.radar.systemLossDecibels, 'f', 2));
+    entityRadarRequiredSnrEdit_->setText(QString::number(selectedDefinition->sensor.radar.requiredSnrDecibels, 'f', 2));
+    entityRadarProcessingGainEdit_->setText(QString::number(selectedDefinition->sensor.radar.processingGainDecibels, 'f', 2));
+    entityRadarScanRateEdit_->setText(QString::number(selectedDefinition->sensor.radar.scanRateHertz, 'f', 2));
+    entityRadarReceiverTemperatureEdit_->setText(QString::number(selectedDefinition->sensor.radar.receiverTemperatureKelvin, 'f', 2));
 
     {
         const QSignalBlocker routeListBlocker(entityRouteWaypointList_);
@@ -1816,7 +1858,7 @@ void MainWindow::updateEntityEditor()
     }
 
     entityRouteEdit_->setPlainText(formatRouteDefinitionEditorText(selectedDefinition->kinematics.route));
-    entityEditorHintLabel_->setText(QStringLiteral("正在编辑 %1 的实体定义；应用后会更新当前想定预览与航路。")
+    entityEditorHintLabel_->setText(QStringLiteral("正在编辑 %1 的实体定义；应用后会更新当前想定预览、机动参数、雷达参数与航路。")
                                         .arg(QString::fromStdString(selectedDefinition->identity.displayName.empty()
                                                                         ? selectedDefinition->identity.id
                                                                         : selectedDefinition->identity.displayName)));
@@ -2025,10 +2067,16 @@ bool MainWindow::addEntityFromEditor()
     entityDefinition.identity.displayName = QStringLiteral("New Entity %1").arg(candidateIndex).toStdString();
     entityDefinition.identity.category = "aircraft";
     entityDefinition.identity.colorHex = "#607D8B";
+    entityDefinition.signature.radarCrossSectionSquareMeters = 1.0;
+    entityDefinition.kinematics.preferredSpeedMetersPerSecond = 12.0;
     entityDefinition.kinematics.maxSpeedMetersPerSecond = 12.0;
+    entityDefinition.kinematics.maxAccelerationMetersPerSecondSquared = 2.0;
+    entityDefinition.kinematics.maxDecelerationMetersPerSecondSquared = 3.0;
     entityDefinition.kinematics.maxTurnRateDegreesPerSecond = 180.0;
     entityDefinition.sensor.fieldOfViewDegrees = 360.0;
     entityDefinition.sensor.enabled = false;
+    entityDefinition.sensor.radar.requiredSnrDecibels = 13.0;
+    entityDefinition.sensor.radar.receiverTemperatureKelvin = 290.0;
     entityDefinition.mission.behavior = "patrol";
 
     timer_->stop();
@@ -2412,10 +2460,29 @@ bool MainWindow::applyEntityEditorChanges()
         || !parseDouble(entityVelocityXEdit_, QStringLiteral("速度 X"), false, entityDefinition.kinematics.velocity.x)
         || !parseDouble(entityVelocityYEdit_, QStringLiteral("速度 Y"), false, entityDefinition.kinematics.velocity.y)
         || !parseDouble(entityHeadingEdit_, QStringLiteral("航向"), false, entityDefinition.kinematics.headingDegrees)
+        || !parseDouble(entityPreferredSpeedEdit_, QStringLiteral("首选速度"), true, entityDefinition.kinematics.preferredSpeedMetersPerSecond)
         || !parseDouble(entityMaxSpeedEdit_, QStringLiteral("最大速度"), true, entityDefinition.kinematics.maxSpeedMetersPerSecond)
+        || !parseDouble(entityMaxAccelerationEdit_, QStringLiteral("最大加速度"), true, entityDefinition.kinematics.maxAccelerationMetersPerSecondSquared)
+        || !parseDouble(entityMaxDecelerationEdit_, QStringLiteral("最大减速度"), true, entityDefinition.kinematics.maxDecelerationMetersPerSecondSquared)
         || !parseDouble(entityMaxTurnRateEdit_, QStringLiteral("最大转率"), true, entityDefinition.kinematics.maxTurnRateDegreesPerSecond)
+        || !parseDouble(entityRadarCrossSectionEdit_, QStringLiteral("目标 RCS"), true, entityDefinition.signature.radarCrossSectionSquareMeters)
         || !parseDouble(entitySensorRangeEdit_, QStringLiteral("传感器距离"), true, entityDefinition.sensor.rangeMeters)
-        || !parseDouble(entitySensorFieldOfViewEdit_, QStringLiteral("传感器视场"), true, entityDefinition.sensor.fieldOfViewDegrees)) {
+        || !parseDouble(entitySensorFieldOfViewEdit_, QStringLiteral("传感器视场"), true, entityDefinition.sensor.fieldOfViewDegrees)
+        || !parseDouble(entityRadarPeakPowerEdit_, QStringLiteral("雷达峰值功率"), true, entityDefinition.sensor.radar.peakTransmitPowerWatts)
+        || !parseDouble(entityRadarAntennaGainEdit_, QStringLiteral("天线增益"), true, entityDefinition.sensor.radar.antennaGainDecibels)
+        || !parseDouble(entityRadarCenterFrequencyEdit_, QStringLiteral("中心频率"), true, entityDefinition.sensor.radar.centerFrequencyHertz)
+        || !parseDouble(entityRadarBandwidthEdit_, QStringLiteral("信号带宽"), true, entityDefinition.sensor.radar.signalBandwidthHertz)
+        || !parseDouble(entityRadarNoiseFigureEdit_, QStringLiteral("噪声系数"), true, entityDefinition.sensor.radar.noiseFigureDecibels)
+        || !parseDouble(entityRadarSystemLossEdit_, QStringLiteral("系统损耗"), true, entityDefinition.sensor.radar.systemLossDecibels)
+        || !parseDouble(entityRadarRequiredSnrEdit_, QStringLiteral("检测门限 SNR"), true, entityDefinition.sensor.radar.requiredSnrDecibels)
+        || !parseDouble(entityRadarProcessingGainEdit_, QStringLiteral("处理增益"), true, entityDefinition.sensor.radar.processingGainDecibels)
+        || !parseDouble(entityRadarScanRateEdit_, QStringLiteral("扫描频率"), true, entityDefinition.sensor.radar.scanRateHertz)
+        || !parseDouble(entityRadarReceiverTemperatureEdit_, QStringLiteral("接收机温度"), true, entityDefinition.sensor.radar.receiverTemperatureKelvin)) {
+        return false;
+    }
+
+    if (entityDefinition.kinematics.preferredSpeedMetersPerSecond > entityDefinition.kinematics.maxSpeedMetersPerSecond + 1e-9) {
+        QMessageBox::warning(this, QStringLiteral("实体参数无效"), QStringLiteral("首选速度不能大于最大速度。"));
         return false;
     }
 
@@ -2466,6 +2533,25 @@ void MainWindow::updateEntityDetails()
             const QString missionTarget = state.missionTargetEntityId.empty()
                                               ? QStringLiteral("无")
                                               : QString::fromStdString(state.missionTargetEntityId);
+            const QString sensorEnabledText = state.sensorEnabled ? QStringLiteral("是") : QStringLiteral("否");
+            const QString sensorType = state.sensorType.empty() ? QStringLiteral("未指定") : QString::fromStdString(state.sensorType);
+            const bool hasDetailedRadarModel = state.radarPeakTransmitPowerWatts > 0.0
+                && state.radarAntennaGainDecibels > 0.0
+                && state.radarCenterFrequencyHertz > 0.0
+                && state.radarSignalBandwidthHertz > 0.0;
+            const QString detailedRadarText = hasDetailedRadarModel
+                                                  ? QStringLiteral("峰值功率 %1 W, 增益 %2 dB, 频率 %3 Hz, 带宽 %4 Hz, 噪声系数 %5 dB, 损耗 %6 dB, 门限 %7 dB, 处理增益 %8 dB, 扫描频率 %9 Hz, 温度 %10 K")
+                                                        .arg(state.radarPeakTransmitPowerWatts, 0, 'g', 8)
+                                                        .arg(state.radarAntennaGainDecibels, 0, 'f', 1)
+                                                        .arg(state.radarCenterFrequencyHertz, 0, 'g', 8)
+                                                        .arg(state.radarSignalBandwidthHertz, 0, 'g', 8)
+                                                        .arg(state.radarNoiseFigureDecibels, 0, 'f', 1)
+                                                        .arg(state.radarSystemLossDecibels, 0, 'f', 1)
+                                                        .arg(state.radarRequiredSnrDecibels, 0, 'f', 1)
+                                                        .arg(state.radarProcessingGainDecibels, 0, 'f', 1)
+                                                        .arg(state.radarScanRateHertz, 0, 'f', 2)
+                                                        .arg(state.radarReceiverTemperatureKelvin, 0, 'f', 1)
+                                                  : QStringLiteral("未配置详细雷达模型");
             const QString taskParameters = state.missionTaskParametersSummary.empty()
                                                ? QStringLiteral("默认")
                                                : QString::fromStdString(state.missionTaskParametersSummary);
@@ -2509,7 +2595,7 @@ void MainWindow::updateEntityDetails()
                                                      : QString::fromStdString(state.missionLastCompletedWaypointName);
 
             entityDetailsLabel_->setText(
-                QStringLiteral("ID: %1\n名称: %2\n阵营: %3\n类型: %4\n角色: %5\n标签: %6\n位置: (%7, %8)\n速度: (%9, %10)\n航向: %11°\n最大速度: %12 m/s\n最大转率: %13 °/s\n轨迹点数: %14\n传感器半径: %15 m\n传感器视场: %16°\n机动引导: %17\n引导目标: %18\n任务目标: %19\n任务行为: %20\n任务对象: %21\n任务参数: %22\n任务状态: %23\n执行阶段: %24\n终态原因: %25\n前置任务实体: %26\n前置任务状态: %27\n前置约束满足: %28\n任务超时: %29\n下一回退任务: %30\n剩余回退步数: %31\n最近重规划原因: %32\n最近重规划切换: %33\n阶段持续: %34 s\n阶段起始 Tick: %35\n已到达航点数: %36\n已完成航路圈数: %37\n最近到达航点: %38\n当前航路点: %39\n航路点等待: %40\n机动航路:\n%41\n探测目标: %42")
+                QStringLiteral("ID: %1\n名称: %2\n阵营: %3\n类型: %4\n角色: %5\n标签: %6\n位置: (%7, %8)\n速度: (%9, %10)\n航向: %11°\n首选速度: %12 m/s\n最大速度: %13 m/s\n最大加速度: %14 m/s²\n最大减速度: %15 m/s²\n最大转率: %16 °/s\n目标 RCS: %17 m²\n轨迹点数: %18\n传感器启用: %19\n传感器类型: %20\n传感器半径: %21 m\n传感器视场: %22°\n详细雷达: %23\n机动引导: %24\n引导目标: %25\n任务目标: %26\n任务行为: %27\n任务对象: %28\n任务参数: %29\n任务状态: %30\n执行阶段: %31\n终态原因: %32\n前置任务实体: %33\n前置任务状态: %34\n前置约束满足: %35\n任务超时: %36\n下一回退任务: %37\n剩余回退步数: %38\n最近重规划原因: %39\n最近重规划切换: %40\n阶段持续: %41 s\n阶段起始 Tick: %42\n已到达航点数: %43\n已完成航路圈数: %44\n最近到达航点: %45\n当前航路点: %46\n航路点等待: %47\n机动航路:\n%48\n探测目标: %49")
                     .arg(QString::fromStdString(state.id))
                     .arg(QString::fromStdString(state.displayName))
                     .arg(state.side.empty() ? QStringLiteral("未指定") : QString::fromStdString(state.side))
@@ -2521,11 +2607,18 @@ void MainWindow::updateEntityDetails()
                     .arg(state.velocity.x, 0, 'f', 2)
                     .arg(state.velocity.y, 0, 'f', 2)
                     .arg(state.headingDegrees, 0, 'f', 1)
+                    .arg(state.preferredSpeedMetersPerSecond, 0, 'f', 1)
                     .arg(state.maxSpeedMetersPerSecond, 0, 'f', 1)
+                    .arg(state.maxAccelerationMetersPerSecondSquared, 0, 'f', 1)
+                    .arg(state.maxDecelerationMetersPerSecondSquared, 0, 'f', 1)
                     .arg(state.maxTurnRateDegreesPerSecond, 0, 'f', 1)
+                    .arg(state.radarCrossSectionSquareMeters, 0, 'f', 2)
                     .arg(trail.size())
+                    .arg(sensorEnabledText)
+                    .arg(sensorType)
                     .arg(state.sensorRangeMeters, 0, 'f', 1)
                     .arg(state.sensorFieldOfViewDegrees, 0, 'f', 1)
+                    .arg(detailedRadarText)
                     .arg(guidanceMode)
                     .arg(guidanceTarget)
                     .arg(state.missionObjective.empty() ? QStringLiteral("无") : QString::fromStdString(state.missionObjective))

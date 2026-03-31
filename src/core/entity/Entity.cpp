@@ -117,6 +117,26 @@ void Entity::setMaxSpeedMetersPerSecond(double value)
     maxSpeedMetersPerSecond_ = value;
 }
 
+double Entity::maxAccelerationMetersPerSecondSquared() const
+{
+    return maxAccelerationMetersPerSecondSquared_;
+}
+
+void Entity::setMaxAccelerationMetersPerSecondSquared(double value)
+{
+    maxAccelerationMetersPerSecondSquared_ = value;
+}
+
+double Entity::maxDecelerationMetersPerSecondSquared() const
+{
+    return maxDecelerationMetersPerSecondSquared_;
+}
+
+void Entity::setMaxDecelerationMetersPerSecondSquared(double value)
+{
+    maxDecelerationMetersPerSecondSquared_ = value;
+}
+
 double Entity::maxTurnRateDegreesPerSecond() const
 {
     return maxTurnRateDegreesPerSecond_;
@@ -125,6 +145,16 @@ double Entity::maxTurnRateDegreesPerSecond() const
 void Entity::setMaxTurnRateDegreesPerSecond(double value)
 {
     maxTurnRateDegreesPerSecond_ = value;
+}
+
+double Entity::radarCrossSectionSquareMeters() const
+{
+    return radarCrossSectionSquareMeters_;
+}
+
+void Entity::setRadarCrossSectionSquareMeters(double value)
+{
+    radarCrossSectionSquareMeters_ = value;
 }
 
 void Entity::update(UpdatePhase phase, const SimulationUpdateContext& context)

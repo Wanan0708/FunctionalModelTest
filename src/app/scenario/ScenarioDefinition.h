@@ -30,6 +30,10 @@ struct EntityIdentityDefinition {
     std::vector<std::string> tags;
 };
 
+struct EntitySignatureDefinition {
+    double radarCrossSectionSquareMeters {1.0};
+};
+
 struct EntityKinematicsDefinition {
     struct RouteWaypointDefinition {
         std::string name;
@@ -40,16 +44,33 @@ struct EntityKinematicsDefinition {
     fm::core::Vector2 position;
     fm::core::Vector2 velocity;
     double headingDegrees {0.0};
+    double preferredSpeedMetersPerSecond {0.0};
     double maxSpeedMetersPerSecond {0.0};
+    double maxAccelerationMetersPerSecondSquared {0.0};
+    double maxDecelerationMetersPerSecondSquared {0.0};
     double maxTurnRateDegreesPerSecond {180.0};
     std::vector<RouteWaypointDefinition> route;
 };
 
 struct EntitySensorDefinition {
+    struct RadarParametersDefinition {
+        double peakTransmitPowerWatts {0.0};
+        double antennaGainDecibels {0.0};
+        double centerFrequencyHertz {0.0};
+        double signalBandwidthHertz {0.0};
+        double noiseFigureDecibels {0.0};
+        double systemLossDecibels {0.0};
+        double requiredSnrDecibels {13.0};
+        double processingGainDecibels {0.0};
+        double scanRateHertz {0.0};
+        double receiverTemperatureKelvin {290.0};
+    };
+
     std::string type;
     double rangeMeters {0.0};
     double fieldOfViewDegrees {360.0};
     bool enabled {true};
+    RadarParametersDefinition radar;
 };
 
 struct EntityMissionDefinition {
@@ -91,6 +112,7 @@ struct EntityMissionDefinition {
 
 struct EntityDefinition {
     EntityIdentityDefinition identity;
+    EntitySignatureDefinition signature;
     EntityKinematicsDefinition kinematics;
     EntitySensorDefinition sensor;
     EntityMissionDefinition mission;

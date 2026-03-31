@@ -41,12 +41,26 @@ EntityEditorPanel::EntityEditorPanel(QWidget* parent)
     velocityXEdit_ = new QLineEdit(contentWidget);
     velocityYEdit_ = new QLineEdit(contentWidget);
     headingEdit_ = new QLineEdit(contentWidget);
+    preferredSpeedEdit_ = new QLineEdit(contentWidget);
     maxSpeedEdit_ = new QLineEdit(contentWidget);
+    maxAccelerationEdit_ = new QLineEdit(contentWidget);
+    maxDecelerationEdit_ = new QLineEdit(contentWidget);
     maxTurnRateEdit_ = new QLineEdit(contentWidget);
+    radarCrossSectionEdit_ = new QLineEdit(contentWidget);
     sensorEnabledCheckBox_ = new QCheckBox(QStringLiteral("启用传感器"), contentWidget);
     sensorTypeEdit_ = new QLineEdit(contentWidget);
     sensorRangeEdit_ = new QLineEdit(contentWidget);
     sensorFieldOfViewEdit_ = new QLineEdit(contentWidget);
+    radarPeakPowerEdit_ = new QLineEdit(contentWidget);
+    radarAntennaGainEdit_ = new QLineEdit(contentWidget);
+    radarCenterFrequencyEdit_ = new QLineEdit(contentWidget);
+    radarBandwidthEdit_ = new QLineEdit(contentWidget);
+    radarNoiseFigureEdit_ = new QLineEdit(contentWidget);
+    radarSystemLossEdit_ = new QLineEdit(contentWidget);
+    radarRequiredSnrEdit_ = new QLineEdit(contentWidget);
+    radarProcessingGainEdit_ = new QLineEdit(contentWidget);
+    radarScanRateEdit_ = new QLineEdit(contentWidget);
+    radarReceiverTemperatureEdit_ = new QLineEdit(contentWidget);
     routeWaypointList_ = new QListWidget(contentWidget);
     routeWaypointNameEdit_ = new QLineEdit(contentWidget);
     routeWaypointXEdit_ = new QLineEdit(contentWidget);
@@ -64,10 +78,24 @@ EntityEditorPanel::EntityEditorPanel(QWidget* parent)
     applyButton_ = new QPushButton(QStringLiteral("应用实体属性"), contentWidget);
 
     hintLabel_->setWordWrap(true);
-    hintLabel_->setText(QStringLiteral("编辑实体基础信息、运动学参数、传感器和航路。可直接增删改航点，底部保留只读航路预览。"));
+    hintLabel_->setText(QStringLiteral("编辑实体基础信息、运动学参数、RCS、传感器和航路。支持加减速与详细雷达参数建模，底部保留只读航路预览。"));
     idEdit_->setReadOnly(true);
     colorEdit_->setPlaceholderText(QStringLiteral("#2E86AB"));
+    preferredSpeedEdit_->setPlaceholderText(QStringLiteral("12.0"));
+    maxAccelerationEdit_->setPlaceholderText(QStringLiteral("2.0"));
+    maxDecelerationEdit_->setPlaceholderText(QStringLiteral("3.0"));
+    radarCrossSectionEdit_->setPlaceholderText(QStringLiteral("5.0"));
     sensorTypeEdit_->setPlaceholderText(QStringLiteral("radar / eo / wide-area-radar"));
+    radarPeakPowerEdit_->setPlaceholderText(QStringLiteral("5000.0"));
+    radarAntennaGainEdit_->setPlaceholderText(QStringLiteral("35.0"));
+    radarCenterFrequencyEdit_->setPlaceholderText(QStringLiteral("1.0e10"));
+    radarBandwidthEdit_->setPlaceholderText(QStringLiteral("1.0e6"));
+    radarNoiseFigureEdit_->setPlaceholderText(QStringLiteral("4.0"));
+    radarSystemLossEdit_->setPlaceholderText(QStringLiteral("6.0"));
+    radarRequiredSnrEdit_->setPlaceholderText(QStringLiteral("13.0"));
+    radarProcessingGainEdit_->setPlaceholderText(QStringLiteral("0.0"));
+    radarScanRateEdit_->setPlaceholderText(QStringLiteral("2.0"));
+    radarReceiverTemperatureEdit_->setPlaceholderText(QStringLiteral("290.0"));
     routeWaypointList_->setMinimumHeight(110);
     routeWaypointNameEdit_->setPlaceholderText(QStringLiteral("wp-1"));
     routeWaypointXEdit_->setPlaceholderText(QStringLiteral("10.0"));
@@ -88,12 +116,26 @@ EntityEditorPanel::EntityEditorPanel(QWidget* parent)
     formLayout->addRow(QStringLiteral("速度 X"), velocityXEdit_);
     formLayout->addRow(QStringLiteral("速度 Y"), velocityYEdit_);
     formLayout->addRow(QStringLiteral("航向"), headingEdit_);
+    formLayout->addRow(QStringLiteral("首选速度"), preferredSpeedEdit_);
     formLayout->addRow(QStringLiteral("最大速度"), maxSpeedEdit_);
+    formLayout->addRow(QStringLiteral("最大加速度"), maxAccelerationEdit_);
+    formLayout->addRow(QStringLiteral("最大减速度"), maxDecelerationEdit_);
     formLayout->addRow(QStringLiteral("最大转率"), maxTurnRateEdit_);
+    formLayout->addRow(QStringLiteral("目标 RCS"), radarCrossSectionEdit_);
     formLayout->addRow(QString(), sensorEnabledCheckBox_);
     formLayout->addRow(QStringLiteral("传感器类型"), sensorTypeEdit_);
     formLayout->addRow(QStringLiteral("传感器距离"), sensorRangeEdit_);
     formLayout->addRow(QStringLiteral("传感器视场"), sensorFieldOfViewEdit_);
+    formLayout->addRow(QStringLiteral("雷达峰值功率"), radarPeakPowerEdit_);
+    formLayout->addRow(QStringLiteral("天线增益"), radarAntennaGainEdit_);
+    formLayout->addRow(QStringLiteral("中心频率"), radarCenterFrequencyEdit_);
+    formLayout->addRow(QStringLiteral("信号带宽"), radarBandwidthEdit_);
+    formLayout->addRow(QStringLiteral("噪声系数"), radarNoiseFigureEdit_);
+    formLayout->addRow(QStringLiteral("系统损耗"), radarSystemLossEdit_);
+    formLayout->addRow(QStringLiteral("检测门限 SNR"), radarRequiredSnrEdit_);
+    formLayout->addRow(QStringLiteral("处理增益"), radarProcessingGainEdit_);
+    formLayout->addRow(QStringLiteral("扫描频率"), radarScanRateEdit_);
+    formLayout->addRow(QStringLiteral("接收机温度"), radarReceiverTemperatureEdit_);
 
     routeEditorWidget->setLayout(routeEditorLayout);
     routeEditorLayout->setContentsMargins(0, 0, 0, 0);
@@ -144,12 +186,26 @@ QLineEdit* EntityEditorPanel::positionYEdit() const { return positionYEdit_; }
 QLineEdit* EntityEditorPanel::velocityXEdit() const { return velocityXEdit_; }
 QLineEdit* EntityEditorPanel::velocityYEdit() const { return velocityYEdit_; }
 QLineEdit* EntityEditorPanel::headingEdit() const { return headingEdit_; }
+QLineEdit* EntityEditorPanel::preferredSpeedEdit() const { return preferredSpeedEdit_; }
 QLineEdit* EntityEditorPanel::maxSpeedEdit() const { return maxSpeedEdit_; }
+QLineEdit* EntityEditorPanel::maxAccelerationEdit() const { return maxAccelerationEdit_; }
+QLineEdit* EntityEditorPanel::maxDecelerationEdit() const { return maxDecelerationEdit_; }
 QLineEdit* EntityEditorPanel::maxTurnRateEdit() const { return maxTurnRateEdit_; }
+QLineEdit* EntityEditorPanel::radarCrossSectionEdit() const { return radarCrossSectionEdit_; }
 QCheckBox* EntityEditorPanel::sensorEnabledCheckBox() const { return sensorEnabledCheckBox_; }
 QLineEdit* EntityEditorPanel::sensorTypeEdit() const { return sensorTypeEdit_; }
 QLineEdit* EntityEditorPanel::sensorRangeEdit() const { return sensorRangeEdit_; }
 QLineEdit* EntityEditorPanel::sensorFieldOfViewEdit() const { return sensorFieldOfViewEdit_; }
+QLineEdit* EntityEditorPanel::radarPeakPowerEdit() const { return radarPeakPowerEdit_; }
+QLineEdit* EntityEditorPanel::radarAntennaGainEdit() const { return radarAntennaGainEdit_; }
+QLineEdit* EntityEditorPanel::radarCenterFrequencyEdit() const { return radarCenterFrequencyEdit_; }
+QLineEdit* EntityEditorPanel::radarBandwidthEdit() const { return radarBandwidthEdit_; }
+QLineEdit* EntityEditorPanel::radarNoiseFigureEdit() const { return radarNoiseFigureEdit_; }
+QLineEdit* EntityEditorPanel::radarSystemLossEdit() const { return radarSystemLossEdit_; }
+QLineEdit* EntityEditorPanel::radarRequiredSnrEdit() const { return radarRequiredSnrEdit_; }
+QLineEdit* EntityEditorPanel::radarProcessingGainEdit() const { return radarProcessingGainEdit_; }
+QLineEdit* EntityEditorPanel::radarScanRateEdit() const { return radarScanRateEdit_; }
+QLineEdit* EntityEditorPanel::radarReceiverTemperatureEdit() const { return radarReceiverTemperatureEdit_; }
 QListWidget* EntityEditorPanel::routeWaypointList() const { return routeWaypointList_; }
 QLineEdit* EntityEditorPanel::routeWaypointNameEdit() const { return routeWaypointNameEdit_; }
 QLineEdit* EntityEditorPanel::routeWaypointXEdit() const { return routeWaypointXEdit_; }

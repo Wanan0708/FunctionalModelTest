@@ -18,6 +18,7 @@ class SimulationManagerTests final : public QObject {
 private slots:
     void advanceOneTickIncrementsClock();
     void movementComponentUpdatesPosition();
+    void movementComponentRespectsAccelerationLimits();
     void entityStoresIntrinsicMetadata();
     void missionComponentStoresTaskState();
     void missionComponentTracksLoiterAndRouteProgress();
@@ -34,10 +35,12 @@ private slots:
     void missionComponentTimesOutAndReplans();
     void missionComponentSupportsMultiStageReplanChain();
     void simulationSessionRenderStateIncludesRuntimeMissionState();
+    void simulationSessionRenderStateIncludesDetailedModelState();
     void scenarioLoaderParsesJson();
     void scenarioLoaderSavesAndReloadsJson();
     void scenarioLoaderSupportsLegacyFlatEntityFields();
     void scenarioLoaderRejectsDuplicateEntityIds();
+    void scenarioLoaderParsesDetailedDynamicsAndRadarFields();
     void simulationSessionTracksTrajectoryDuringStep();
     void simulationSessionUpdatesScenarioDefinition();
     void simulationSessionAddsAndRemovesEntityDefinition();
@@ -53,6 +56,7 @@ private slots:
     void simulationSessionRenderStateIncludesTerminalStatus();
     void sensorComponentDetectsNearbyTargets();
     void sensorComponentRespectsFieldOfView();
+    void sensorComponentUsesRadarEquationAndRcs();
     void simulationSessionRecordsSnapshots();
     void simulationSessionProvidesSnapshotViews();
 };
@@ -80,6 +84,33 @@ void SimulationManagerTests::movementComponentUpdatesPosition()
 
     QVERIFY(std::abs(entity->position().x - 5.0) < 1e-9);
     QVERIFY(std::abs(entity->position().y + 2.0) < 1e-9);
+}
+
+void SimulationManagerTests::movementComponentRespectsAccelerationLimits()
+{
+    auto entity = std::make_shared<fm::core::Entity>("alpha", "Alpha");
+    entity->setPosition({0.0, 0.0});
+    entity->setVelocity({0.0, 0.0});
+    entity->setHeadingDegrees(0.0);
+    entity->addComponent<fm::core::MovementComponent>(
+        std::vector<fm::core::RouteWaypoint> {{"wp-1", {100.0, 0.0}, 0.0}},
+        12.0,
+        12.0,
+        180.0,
+        0.5,
+        2.0,
+        3.0);
+
+    fm::core::SimulationManager manager(1.0);
+    manager.addEntity(entity);
+
+    manager.advanceOneTick();
+    const double speedAfterOneSecond = std::hypot(entity->velocity().x, entity->velocity().y);
+    QVERIFY(speedAfterOneSecond >= 1.8 && speedAfterOneSecond <= 2.2);
+
+    manager.advanceOneTick();
+    const double speedAfterTwoSeconds = std::hypot(entity->velocity().x, entity->velocity().y);
+    QVERIFY(speedAfterTwoSeconds >= 3.8 && speedAfterTwoSeconds <= 4.2);
 }
 
 void SimulationManagerTests::entityStoresIntrinsicMetadata()
@@ -690,6 +721,87 @@ void SimulationManagerTests::simulationSessionRenderStateIncludesRuntimeMissionS
     QCOMPARE(states.front().routeWaypoints.size(), std::size_t {2});
 }
 
+void SimulationManagerTests::simulationSessionRenderStateIncludesDetailedModelState()
+{
+    QTemporaryDir temporaryDir;
+    QVERIFY(temporaryDir.isValid());
+
+    const QString scenarioPath = temporaryDir.filePath("detailed_model_state.json");
+    QFile file(scenarioPath);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+    file.write(R"({
+        "name": "Detailed Model State",
+        "entities": [
+            {
+                "identity": {
+                    "id": "blue-1",
+                    "displayName": "Blue One",
+                    "side": "blue",
+                    "category": "aircraft",
+                    "role": "screen"
+                },
+                "signature": {
+                    "radarCrossSectionSquareMeters": 7.5
+                },
+                "kinematics": {
+                    "position": {"x": 0.0, "y": 0.0},
+                    "velocity": {"x": 6.0, "y": 0.0},
+                    "headingDegrees": 15.0,
+                    "preferredSpeedMetersPerSecond": 8.0,
+                    "maxSpeedMetersPerSecond": 12.0,
+                    "maxAccelerationMetersPerSecondSquared": 2.5,
+                    "maxDecelerationMetersPerSecondSquared": 3.5,
+                    "maxTurnRateDegreesPerSecond": 90.0
+                },
+                "sensor": {
+                    "type": "radar",
+                    "rangeMeters": 0.0,
+                    "fieldOfViewDegrees": 140.0,
+                    "enabled": true,
+                    "radar": {
+                        "peakTransmitPowerWatts": 5000.0,
+                        "antennaGainDecibels": 35.0,
+                        "centerFrequencyHertz": 10000000000.0,
+                        "signalBandwidthHertz": 1000000.0,
+                        "noiseFigureDecibels": 4.0,
+                        "systemLossDecibels": 6.0,
+                        "requiredSnrDecibels": 22.0,
+                        "processingGainDecibels": 3.0,
+                        "scanRateHertz": 2.0,
+                        "receiverTemperatureKelvin": 295.0
+                    }
+                },
+                "mission": {
+                    "behavior": "patrol"
+                }
+            }
+        ]
+    })");
+    file.close();
+
+    fm::app::SimulationSession session(0.1);
+    QVERIFY(session.loadScenario(scenarioPath));
+
+    const auto states = session.renderStates();
+    QCOMPARE(states.size(), std::size_t {1});
+    QVERIFY(std::abs(states.front().preferredSpeedMetersPerSecond - 8.0) < 1e-9);
+    QVERIFY(std::abs(states.front().maxAccelerationMetersPerSecondSquared - 2.5) < 1e-9);
+    QVERIFY(std::abs(states.front().maxDecelerationMetersPerSecondSquared - 3.5) < 1e-9);
+    QVERIFY(std::abs(states.front().radarCrossSectionSquareMeters - 7.5) < 1e-9);
+    QVERIFY(states.front().sensorEnabled);
+    QCOMPARE(states.front().sensorType, std::string("radar"));
+    QVERIFY(std::abs(states.front().radarPeakTransmitPowerWatts - 5000.0) < 1e-9);
+    QVERIFY(std::abs(states.front().radarAntennaGainDecibels - 35.0) < 1e-9);
+    QVERIFY(std::abs(states.front().radarCenterFrequencyHertz - 10000000000.0) < 1e-3);
+    QVERIFY(std::abs(states.front().radarSignalBandwidthHertz - 1000000.0) < 1e-3);
+    QVERIFY(std::abs(states.front().radarNoiseFigureDecibels - 4.0) < 1e-9);
+    QVERIFY(std::abs(states.front().radarSystemLossDecibels - 6.0) < 1e-9);
+    QVERIFY(std::abs(states.front().radarRequiredSnrDecibels - 22.0) < 1e-9);
+    QVERIFY(std::abs(states.front().radarProcessingGainDecibels - 3.0) < 1e-9);
+    QVERIFY(std::abs(states.front().radarScanRateHertz - 2.0) < 1e-9);
+    QVERIFY(std::abs(states.front().radarReceiverTemperatureKelvin - 295.0) < 1e-9);
+}
+
 void SimulationManagerTests::scenarioLoaderParsesJson()
 {
     const QByteArray json = R"({
@@ -1007,6 +1119,63 @@ void SimulationManagerTests::scenarioLoaderRejectsDuplicateEntityIds()
 
     QVERIFY(!result.ok());
     QVERIFY(result.errorMessage.contains("duplicate entity id"));
+}
+
+void SimulationManagerTests::scenarioLoaderParsesDetailedDynamicsAndRadarFields()
+{
+    const QByteArray json = R"({
+        "name": "Detailed Physics Scenario",
+        "entities": [
+            {
+                "identity": {
+                    "id": "radar-1",
+                    "displayName": "Radar One"
+                },
+                "signature": {
+                    "radarCrossSectionSquareMeters": 7.5
+                },
+                "kinematics": {
+                    "position": {"x": 0.0, "y": 0.0},
+                    "velocity": {"x": 2.0, "y": 0.0},
+                    "headingDegrees": 0.0,
+                    "preferredSpeedMetersPerSecond": 6.0,
+                    "maxSpeedMetersPerSecond": 12.0,
+                    "maxAccelerationMetersPerSecondSquared": 2.5,
+                    "maxDecelerationMetersPerSecondSquared": 3.5,
+                    "maxTurnRateDegreesPerSecond": 45.0
+                },
+                "sensor": {
+                    "type": "radar",
+                    "fieldOfViewDegrees": 120.0,
+                    "radar": {
+                        "peakTransmitPowerWatts": 5000.0,
+                        "antennaGainDecibels": 35.0,
+                        "centerFrequencyHertz": 10000000000.0,
+                        "signalBandwidthHertz": 1000000.0,
+                        "noiseFigureDecibels": 4.0,
+                        "systemLossDecibels": 6.0,
+                        "requiredSnrDecibels": 25.0,
+                        "processingGainDecibels": 0.0,
+                        "scanRateHertz": 2.0,
+                        "receiverTemperatureKelvin": 290.0
+                    }
+                }
+            }
+        ]
+    })";
+
+    const auto result = fm::app::ScenarioLoader::loadFromJson(json, "detailed-physics.json");
+
+    QVERIFY(result.ok());
+    QCOMPARE(result.scenario.entities.size(), std::size_t {1});
+    const auto& entity = result.scenario.entities.front();
+    QVERIFY(std::abs(entity.signature.radarCrossSectionSquareMeters - 7.5) < 1e-9);
+    QVERIFY(std::abs(entity.kinematics.preferredSpeedMetersPerSecond - 6.0) < 1e-9);
+    QVERIFY(std::abs(entity.kinematics.maxAccelerationMetersPerSecondSquared - 2.5) < 1e-9);
+    QVERIFY(std::abs(entity.kinematics.maxDecelerationMetersPerSecondSquared - 3.5) < 1e-9);
+    QVERIFY(std::abs(entity.sensor.radar.peakTransmitPowerWatts - 5000.0) < 1e-9);
+    QVERIFY(std::abs(entity.sensor.radar.centerFrequencyHertz - 10000000000.0) < 1e-9);
+    QVERIFY(std::abs(entity.sensor.radar.scanRateHertz - 2.0) < 1e-9);
 }
 
 void SimulationManagerTests::simulationSessionTracksTrajectoryDuringStep()
@@ -1847,6 +2016,51 @@ void SimulationManagerTests::sensorComponentRespectsFieldOfView()
 
     QCOMPARE(sensor.detectedTargetIds().size(), std::size_t {1});
     QCOMPARE(sensor.detectedTargetIds().front(), std::string("ahead"));
+}
+
+void SimulationManagerTests::sensorComponentUsesRadarEquationAndRcs()
+{
+    auto sensorEntity = std::make_shared<fm::core::Entity>("sensor", "Sensor");
+    sensorEntity->setPosition({0.0, 0.0});
+    sensorEntity->setHeadingDegrees(0.0);
+    sensorEntity->setSide("blue");
+    auto& sensor = sensorEntity->addComponent<fm::core::SensorComponent>(
+        0.0,
+        120.0,
+        fm::core::SensorComponent::RadarParameters {
+            5000.0,
+            35.0,
+            10000000000.0,
+            1000000.0,
+            4.0,
+            6.0,
+            25.0,
+            0.0,
+            0.0,
+            290.0,
+        });
+
+    auto strongTarget = std::make_shared<fm::core::Entity>("strong", "Strong");
+    strongTarget->setPosition({5000.0, 0.0});
+    strongTarget->setSide("green");
+    strongTarget->setRadarCrossSectionSquareMeters(10.0);
+
+    auto weakTarget = std::make_shared<fm::core::Entity>("weak", "Weak");
+    weakTarget->setPosition({5000.0, 100.0});
+    weakTarget->setSide("green");
+    weakTarget->setRadarCrossSectionSquareMeters(0.01);
+
+    fm::core::SimulationManager manager(0.1);
+    manager.addEntity(sensorEntity);
+    manager.addEntity(strongTarget);
+    manager.addEntity(weakTarget);
+
+    manager.advanceOneTick();
+
+    QCOMPARE(sensor.detectedTargetIds().size(), std::size_t {1});
+    QCOMPARE(sensor.detectedTargetIds().front(), std::string("strong"));
+    QVERIFY(sensor.estimateSignalToNoiseRatioDecibels(5000.0, 10.0) > 25.0);
+    QVERIFY(sensor.estimateSignalToNoiseRatioDecibels(5000.0, 0.01) < 25.0);
 }
 
 void SimulationManagerTests::simulationSessionRecordsSnapshots()

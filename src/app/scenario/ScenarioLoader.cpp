@@ -371,6 +371,34 @@ bool parseIdentity(const QJsonObject& entityObject, fm::app::EntityDefinition& e
     return true;
 }
 
+bool parseSignature(const QJsonObject& entityObject, fm::app::EntityDefinition& entity, QString& errorMessage)
+{
+    if (!ensureObjectField(entityObject, "signature", errorMessage)) {
+        return false;
+    }
+
+    const auto signatureObject = entityObject.contains("signature") ? entityObject.value("signature").toObject() : entityObject;
+    if (signatureObject.contains("radarCrossSectionSquareMeters")) {
+        if (!parseOptionalNonNegativeDouble(signatureObject,
+                                            "radarCrossSectionSquareMeters",
+                                            1.0,
+                                            entity.signature.radarCrossSectionSquareMeters,
+                                            errorMessage)) {
+            return false;
+        }
+    } else if (entityObject.contains("radarCrossSectionSquareMeters")) {
+        if (!parseOptionalNonNegativeDouble(entityObject,
+                                            "radarCrossSectionSquareMeters",
+                                            1.0,
+                                            entity.signature.radarCrossSectionSquareMeters,
+                                            errorMessage)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool parseKinematics(const QJsonObject& entityObject, fm::app::EntityDefinition& entity, QString& errorMessage)
 {
     if (!ensureObjectField(entityObject, "kinematics", errorMessage)) {
@@ -393,9 +421,33 @@ bool parseKinematics(const QJsonObject& entityObject, fm::app::EntityDefinition&
     }
 
     if (!parseOptionalNonNegativeDouble(kinematicsObject,
+                                        "preferredSpeedMetersPerSecond",
+                                        0.0,
+                                        entity.kinematics.preferredSpeedMetersPerSecond,
+                                        errorMessage)) {
+        return false;
+    }
+
+    if (!parseOptionalNonNegativeDouble(kinematicsObject,
                                         "maxSpeedMetersPerSecond",
                                         0.0,
                                         entity.kinematics.maxSpeedMetersPerSecond,
+                                        errorMessage)) {
+        return false;
+    }
+
+    if (!parseOptionalNonNegativeDouble(kinematicsObject,
+                                        "maxAccelerationMetersPerSecondSquared",
+                                        0.0,
+                                        entity.kinematics.maxAccelerationMetersPerSecondSquared,
+                                        errorMessage)) {
+        return false;
+    }
+
+    if (!parseOptionalNonNegativeDouble(kinematicsObject,
+                                        "maxDecelerationMetersPerSecondSquared",
+                                        0.0,
+                                        entity.kinematics.maxDecelerationMetersPerSecondSquared,
                                         errorMessage)) {
         return false;
     }
@@ -501,6 +553,95 @@ bool parseSensor(const QJsonObject& entityObject, fm::app::EntityDefinition& ent
                                         entity.sensor.fieldOfViewDegrees,
                                         errorMessage)) {
         return false;
+    }
+
+    if (sensorObject.contains("radar")) {
+        if (!sensorObject.value("radar").isObject()) {
+            errorMessage = QString("field 'sensor.radar' must be an object.");
+            return false;
+        }
+
+        const auto radarObject = sensorObject.value("radar").toObject();
+        if (!parseOptionalNonNegativeDouble(radarObject,
+                                            "peakTransmitPowerWatts",
+                                            0.0,
+                                            entity.sensor.radar.peakTransmitPowerWatts,
+                                            errorMessage)) {
+            errorMessage = QString("field 'sensor.radar.peakTransmitPowerWatts': %1").arg(errorMessage);
+            return false;
+        }
+        if (!parseOptionalNonNegativeDouble(radarObject,
+                                            "antennaGainDecibels",
+                                            0.0,
+                                            entity.sensor.radar.antennaGainDecibels,
+                                            errorMessage)) {
+            errorMessage = QString("field 'sensor.radar.antennaGainDecibels': %1").arg(errorMessage);
+            return false;
+        }
+        if (!parseOptionalNonNegativeDouble(radarObject,
+                                            "centerFrequencyHertz",
+                                            0.0,
+                                            entity.sensor.radar.centerFrequencyHertz,
+                                            errorMessage)) {
+            errorMessage = QString("field 'sensor.radar.centerFrequencyHertz': %1").arg(errorMessage);
+            return false;
+        }
+        if (!parseOptionalNonNegativeDouble(radarObject,
+                                            "signalBandwidthHertz",
+                                            0.0,
+                                            entity.sensor.radar.signalBandwidthHertz,
+                                            errorMessage)) {
+            errorMessage = QString("field 'sensor.radar.signalBandwidthHertz': %1").arg(errorMessage);
+            return false;
+        }
+        if (!parseOptionalNonNegativeDouble(radarObject,
+                                            "noiseFigureDecibels",
+                                            0.0,
+                                            entity.sensor.radar.noiseFigureDecibels,
+                                            errorMessage)) {
+            errorMessage = QString("field 'sensor.radar.noiseFigureDecibels': %1").arg(errorMessage);
+            return false;
+        }
+        if (!parseOptionalNonNegativeDouble(radarObject,
+                                            "systemLossDecibels",
+                                            0.0,
+                                            entity.sensor.radar.systemLossDecibels,
+                                            errorMessage)) {
+            errorMessage = QString("field 'sensor.radar.systemLossDecibels': %1").arg(errorMessage);
+            return false;
+        }
+        if (!parseOptionalNonNegativeDouble(radarObject,
+                                            "requiredSnrDecibels",
+                                            13.0,
+                                            entity.sensor.radar.requiredSnrDecibels,
+                                            errorMessage)) {
+            errorMessage = QString("field 'sensor.radar.requiredSnrDecibels': %1").arg(errorMessage);
+            return false;
+        }
+        if (!parseOptionalNonNegativeDouble(radarObject,
+                                            "processingGainDecibels",
+                                            0.0,
+                                            entity.sensor.radar.processingGainDecibels,
+                                            errorMessage)) {
+            errorMessage = QString("field 'sensor.radar.processingGainDecibels': %1").arg(errorMessage);
+            return false;
+        }
+        if (!parseOptionalNonNegativeDouble(radarObject,
+                                            "scanRateHertz",
+                                            0.0,
+                                            entity.sensor.radar.scanRateHertz,
+                                            errorMessage)) {
+            errorMessage = QString("field 'sensor.radar.scanRateHertz': %1").arg(errorMessage);
+            return false;
+        }
+        if (!parseOptionalNonNegativeDouble(radarObject,
+                                            "receiverTemperatureKelvin",
+                                            290.0,
+                                            entity.sensor.radar.receiverTemperatureKelvin,
+                                            errorMessage)) {
+            errorMessage = QString("field 'sensor.radar.receiverTemperatureKelvin': %1").arg(errorMessage);
+            return false;
+        }
     }
 
     return true;
@@ -829,13 +970,27 @@ QJsonObject buildEntityObject(const fm::app::EntityDefinition& entity)
         identityObject.insert("tags", tagsArray);
     }
 
+    QJsonObject signatureObject;
+    if (std::abs(entity.signature.radarCrossSectionSquareMeters - 1.0) > 1e-9) {
+        signatureObject.insert("radarCrossSectionSquareMeters", entity.signature.radarCrossSectionSquareMeters);
+    }
+
     QJsonObject kinematicsObject {
         {"position", toJson(entity.kinematics.position)},
         {"velocity", toJson(entity.kinematics.velocity)},
         {"headingDegrees", entity.kinematics.headingDegrees},
     };
+    if (entity.kinematics.preferredSpeedMetersPerSecond > 0.0) {
+        kinematicsObject.insert("preferredSpeedMetersPerSecond", entity.kinematics.preferredSpeedMetersPerSecond);
+    }
     if (entity.kinematics.maxSpeedMetersPerSecond > 0.0) {
         kinematicsObject.insert("maxSpeedMetersPerSecond", entity.kinematics.maxSpeedMetersPerSecond);
+    }
+    if (entity.kinematics.maxAccelerationMetersPerSecondSquared > 0.0) {
+        kinematicsObject.insert("maxAccelerationMetersPerSecondSquared", entity.kinematics.maxAccelerationMetersPerSecondSquared);
+    }
+    if (entity.kinematics.maxDecelerationMetersPerSecondSquared > 0.0) {
+        kinematicsObject.insert("maxDecelerationMetersPerSecondSquared", entity.kinematics.maxDecelerationMetersPerSecondSquared);
     }
     if (entity.kinematics.maxTurnRateDegreesPerSecond != 180.0) {
         kinematicsObject.insert("maxTurnRateDegreesPerSecond", entity.kinematics.maxTurnRateDegreesPerSecond);
@@ -865,11 +1020,48 @@ QJsonObject buildEntityObject(const fm::app::EntityDefinition& entity)
     if (!entity.sensor.enabled || !sensorObject.isEmpty()) {
         sensorObject.insert("enabled", entity.sensor.enabled);
     }
+    QJsonObject radarObject;
+    if (entity.sensor.radar.peakTransmitPowerWatts > 0.0) {
+        radarObject.insert("peakTransmitPowerWatts", entity.sensor.radar.peakTransmitPowerWatts);
+    }
+    if (entity.sensor.radar.antennaGainDecibels > 0.0) {
+        radarObject.insert("antennaGainDecibels", entity.sensor.radar.antennaGainDecibels);
+    }
+    if (entity.sensor.radar.centerFrequencyHertz > 0.0) {
+        radarObject.insert("centerFrequencyHertz", entity.sensor.radar.centerFrequencyHertz);
+    }
+    if (entity.sensor.radar.signalBandwidthHertz > 0.0) {
+        radarObject.insert("signalBandwidthHertz", entity.sensor.radar.signalBandwidthHertz);
+    }
+    if (entity.sensor.radar.noiseFigureDecibels > 0.0) {
+        radarObject.insert("noiseFigureDecibels", entity.sensor.radar.noiseFigureDecibels);
+    }
+    if (entity.sensor.radar.systemLossDecibels > 0.0) {
+        radarObject.insert("systemLossDecibels", entity.sensor.radar.systemLossDecibels);
+    }
+    if (entity.sensor.radar.requiredSnrDecibels != 13.0) {
+        radarObject.insert("requiredSnrDecibels", entity.sensor.radar.requiredSnrDecibels);
+    }
+    if (entity.sensor.radar.processingGainDecibels > 0.0) {
+        radarObject.insert("processingGainDecibels", entity.sensor.radar.processingGainDecibels);
+    }
+    if (entity.sensor.radar.scanRateHertz > 0.0) {
+        radarObject.insert("scanRateHertz", entity.sensor.radar.scanRateHertz);
+    }
+    if (std::abs(entity.sensor.radar.receiverTemperatureKelvin - 290.0) > 1e-9) {
+        radarObject.insert("receiverTemperatureKelvin", entity.sensor.radar.receiverTemperatureKelvin);
+    }
+    if (!radarObject.isEmpty()) {
+        sensorObject.insert("radar", radarObject);
+    }
 
     QJsonObject entityObject {
         {"identity", identityObject},
         {"kinematics", kinematicsObject},
     };
+    if (!signatureObject.isEmpty()) {
+        entityObject.insert("signature", signatureObject);
+    }
     if (!sensorObject.isEmpty()) {
         entityObject.insert("sensor", sensorObject);
     }
@@ -950,6 +1142,12 @@ ScenarioLoadResult ScenarioLoader::loadFromJson(const QByteArray& jsonBytes, con
         if (!entityIds.insert(entity.identity.id).second) {
             return {{}, QString("Scenario in %1 contains duplicate entity id '%2'.")
                             .arg(sourceName, QString::fromStdString(entity.identity.id))};
+        }
+
+        errorMessage.clear();
+        if (!parseSignature(entityObject, entity, errorMessage)) {
+            return {{}, QString("Entity '%1' in %2: %3")
+                            .arg(QString::fromStdString(entity.identity.id), sourceName, errorMessage)};
         }
 
         errorMessage.clear();

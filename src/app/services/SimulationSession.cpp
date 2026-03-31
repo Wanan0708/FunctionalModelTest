@@ -392,12 +392,21 @@ std::vector<EntityRenderState> SimulationSession::buildRenderStates(const Simula
     states.reserve(snapshot.entities.size());
 
     for (const auto& entitySnapshot : snapshot.entities) {
+        const EntityDefinition* definition = nullptr;
+        for (const auto& scenarioEntity : scenario_.entities) {
+            if (scenarioEntity.identity.id == entitySnapshot.id) {
+                definition = &scenarioEntity;
+                break;
+            }
+        }
+
         std::string displayName = entitySnapshot.id;
         std::string colorHex = "#4C956C";
         std::string side;
         std::string category;
         std::string role;
         std::vector<std::string> tags;
+        double preferredSpeedMetersPerSecond = 0.0;
         std::string missionObjective;
         std::string missionBehavior;
         std::string missionTargetEntityId;
@@ -425,11 +434,55 @@ std::vector<EntityRenderState> SimulationSession::buildRenderStates(const Simula
         double routeLoiterSecondsRemaining = 0.0;
         bool routeIsLoitering = false;
         double maxSpeedMetersPerSecond = 0.0;
+        double maxAccelerationMetersPerSecondSquared = 0.0;
+        double maxDecelerationMetersPerSecondSquared = 0.0;
         double maxTurnRateDegreesPerSecond = 0.0;
+        double radarCrossSectionSquareMeters = 1.0;
+        bool sensorEnabled = false;
+        std::string sensorType;
         double sensorRangeMeters = 0.0;
         double sensorFieldOfViewDegrees = 360.0;
+        double radarPeakTransmitPowerWatts = 0.0;
+        double radarAntennaGainDecibels = 0.0;
+        double radarCenterFrequencyHertz = 0.0;
+        double radarSignalBandwidthHertz = 0.0;
+        double radarNoiseFigureDecibels = 0.0;
+        double radarSystemLossDecibels = 0.0;
+        double radarRequiredSnrDecibels = 13.0;
+        double radarProcessingGainDecibels = 0.0;
+        double radarScanRateHertz = 0.0;
+        double radarReceiverTemperatureKelvin = 290.0;
         std::string movementGuidanceMode = "inertial";
         std::string movementGuidanceTargetName;
+
+        if (definition != nullptr) {
+            displayName = definition->identity.displayName.empty() ? definition->identity.id : definition->identity.displayName;
+            colorHex = definition->identity.colorHex.empty() ? colorHex : definition->identity.colorHex;
+            side = definition->identity.side;
+            category = definition->identity.category;
+            role = definition->identity.role;
+            tags = definition->identity.tags;
+            preferredSpeedMetersPerSecond = definition->kinematics.preferredSpeedMetersPerSecond;
+            maxSpeedMetersPerSecond = definition->kinematics.maxSpeedMetersPerSecond;
+            maxAccelerationMetersPerSecondSquared = definition->kinematics.maxAccelerationMetersPerSecondSquared;
+            maxDecelerationMetersPerSecondSquared = definition->kinematics.maxDecelerationMetersPerSecondSquared;
+            maxTurnRateDegreesPerSecond = definition->kinematics.maxTurnRateDegreesPerSecond;
+            radarCrossSectionSquareMeters = definition->signature.radarCrossSectionSquareMeters;
+            sensorEnabled = definition->sensor.enabled;
+            sensorType = definition->sensor.type;
+            sensorRangeMeters = definition->sensor.rangeMeters;
+            sensorFieldOfViewDegrees = definition->sensor.fieldOfViewDegrees;
+            radarPeakTransmitPowerWatts = definition->sensor.radar.peakTransmitPowerWatts;
+            radarAntennaGainDecibels = definition->sensor.radar.antennaGainDecibels;
+            radarCenterFrequencyHertz = definition->sensor.radar.centerFrequencyHertz;
+            radarSignalBandwidthHertz = definition->sensor.radar.signalBandwidthHertz;
+            radarNoiseFigureDecibels = definition->sensor.radar.noiseFigureDecibels;
+            radarSystemLossDecibels = definition->sensor.radar.systemLossDecibels;
+            radarRequiredSnrDecibels = definition->sensor.radar.requiredSnrDecibels;
+            radarProcessingGainDecibels = definition->sensor.radar.processingGainDecibels;
+            radarScanRateHertz = definition->sensor.radar.scanRateHertz;
+            radarReceiverTemperatureKelvin = definition->sensor.radar.receiverTemperatureKelvin;
+        }
 
         if (const auto* entity = findEntityById(entitySnapshot.id); entity != nullptr) {
             displayName = entity->displayName().empty() ? entity->id() : entity->displayName();
@@ -439,7 +492,10 @@ std::vector<EntityRenderState> SimulationSession::buildRenderStates(const Simula
             role = entity->role();
             tags = entity->tags();
             maxSpeedMetersPerSecond = entity->maxSpeedMetersPerSecond();
+            maxAccelerationMetersPerSecondSquared = entity->maxAccelerationMetersPerSecondSquared();
+            maxDecelerationMetersPerSecondSquared = entity->maxDecelerationMetersPerSecondSquared();
             maxTurnRateDegreesPerSecond = entity->maxTurnRateDegreesPerSecond();
+            radarCrossSectionSquareMeters = entity->radarCrossSectionSquareMeters();
             if (const auto* mission = entity->getComponent<fm::core::MissionComponent>(); mission != nullptr) {
                 missionObjective = mission->objective();
                 missionBehavior = mission->behavior();
@@ -489,6 +545,7 @@ std::vector<EntityRenderState> SimulationSession::buildRenderStates(const Simula
             }
 
             if (const auto* sensor = entity->getComponent<fm::core::SensorComponent>(); sensor != nullptr) {
+                sensorEnabled = true;
                 sensorRangeMeters = sensor->rangeMeters();
                 sensorFieldOfViewDegrees = sensor->fieldOfViewDegrees();
             }
@@ -537,10 +594,26 @@ std::vector<EntityRenderState> SimulationSession::buildRenderStates(const Simula
             entitySnapshot.position,
             entitySnapshot.velocity,
             entitySnapshot.headingDegrees,
+            preferredSpeedMetersPerSecond,
             maxSpeedMetersPerSecond,
+            maxAccelerationMetersPerSecondSquared,
+            maxDecelerationMetersPerSecondSquared,
             maxTurnRateDegreesPerSecond,
+            radarCrossSectionSquareMeters,
+            sensorEnabled,
+            sensorType,
             sensorRangeMeters,
             sensorFieldOfViewDegrees,
+            radarPeakTransmitPowerWatts,
+            radarAntennaGainDecibels,
+            radarCenterFrequencyHertz,
+            radarSignalBandwidthHertz,
+            radarNoiseFigureDecibels,
+            radarSystemLossDecibels,
+            radarRequiredSnrDecibels,
+            radarProcessingGainDecibels,
+            radarScanRateHertz,
+            radarReceiverTemperatureKelvin,
             movementGuidanceMode,
             movementGuidanceTargetName,
             missionObjective,
@@ -731,7 +804,10 @@ void SimulationSession::rebuildFromScenario()
         entity->setVelocity(definition.kinematics.velocity);
         entity->setHeadingDegrees(definition.kinematics.headingDegrees);
         entity->setMaxSpeedMetersPerSecond(definition.kinematics.maxSpeedMetersPerSecond);
+        entity->setMaxAccelerationMetersPerSecondSquared(definition.kinematics.maxAccelerationMetersPerSecondSquared);
+        entity->setMaxDecelerationMetersPerSecondSquared(definition.kinematics.maxDecelerationMetersPerSecondSquared);
         entity->setMaxTurnRateDegreesPerSecond(definition.kinematics.maxTurnRateDegreesPerSecond);
+        entity->setRadarCrossSectionSquareMeters(definition.signature.radarCrossSectionSquareMeters);
         entity->addComponent<fm::core::MissionComponent>(
             definition.mission.objective,
             definition.mission.behavior,
@@ -790,18 +866,55 @@ void SimulationSession::rebuildFromScenario()
                 route.push_back({waypoint.name, waypoint.position, waypoint.loiterSeconds});
             }
 
-            const auto preferredSpeed = std::hypot(definition.kinematics.velocity.x, definition.kinematics.velocity.y);
+            const auto preferredSpeed = definition.kinematics.preferredSpeedMetersPerSecond > 0.0
+                ? definition.kinematics.preferredSpeedMetersPerSecond
+                : std::max(std::hypot(definition.kinematics.velocity.x, definition.kinematics.velocity.y),
+                           definition.kinematics.maxSpeedMetersPerSecond);
             entity->addComponent<fm::core::MovementComponent>(
                 std::move(route),
                 preferredSpeed,
                 definition.kinematics.maxSpeedMetersPerSecond,
-                definition.kinematics.maxTurnRateDegreesPerSecond);
+                definition.kinematics.maxTurnRateDegreesPerSecond,
+                0.5,
+                definition.kinematics.maxAccelerationMetersPerSecondSquared,
+                definition.kinematics.maxDecelerationMetersPerSecondSquared);
         } else {
             entity->addComponent<fm::core::MovementComponent>();
         }
         if (definition.sensor.enabled && definition.sensor.rangeMeters > 0.0) {
-            entity->addComponent<fm::core::SensorComponent>(definition.sensor.rangeMeters,
-                                                            definition.sensor.fieldOfViewDegrees);
+            entity->addComponent<fm::core::SensorComponent>(
+                definition.sensor.rangeMeters,
+                definition.sensor.fieldOfViewDegrees,
+                fm::core::SensorComponent::RadarParameters {
+                    definition.sensor.radar.peakTransmitPowerWatts,
+                    definition.sensor.radar.antennaGainDecibels,
+                    definition.sensor.radar.centerFrequencyHertz,
+                    definition.sensor.radar.signalBandwidthHertz,
+                    definition.sensor.radar.noiseFigureDecibels,
+                    definition.sensor.radar.systemLossDecibels,
+                    definition.sensor.radar.requiredSnrDecibels,
+                    definition.sensor.radar.processingGainDecibels,
+                    definition.sensor.radar.scanRateHertz,
+                    definition.sensor.radar.receiverTemperatureKelvin,
+                });
+        } else if (definition.sensor.enabled
+                   && definition.sensor.radar.peakTransmitPowerWatts > 0.0
+                   && definition.sensor.radar.centerFrequencyHertz > 0.0) {
+            entity->addComponent<fm::core::SensorComponent>(
+                0.0,
+                definition.sensor.fieldOfViewDegrees,
+                fm::core::SensorComponent::RadarParameters {
+                    definition.sensor.radar.peakTransmitPowerWatts,
+                    definition.sensor.radar.antennaGainDecibels,
+                    definition.sensor.radar.centerFrequencyHertz,
+                    definition.sensor.radar.signalBandwidthHertz,
+                    definition.sensor.radar.noiseFigureDecibels,
+                    definition.sensor.radar.systemLossDecibels,
+                    definition.sensor.radar.requiredSnrDecibels,
+                    definition.sensor.radar.processingGainDecibels,
+                    definition.sensor.radar.scanRateHertz,
+                    definition.sensor.radar.receiverTemperatureKelvin,
+                });
         }
 
         trajectoryHistory_.emplace(definition.identity.id, std::vector<fm::core::Vector2> {definition.kinematics.position});
