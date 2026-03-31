@@ -20,6 +20,16 @@ set(FM_APP_SOURCES
 )
 
 set(FM_UI_SOURCES
+    ui/widgets/SimulationControlPanel.h
+    ui/widgets/SimulationControlPanel.cpp
+    ui/widgets/ScenarioEditorPanel.h
+    ui/widgets/ScenarioEditorPanel.cpp
+    ui/widgets/MissionEditorPanel.h
+    ui/widgets/MissionEditorPanel.cpp
+    ui/widgets/EntityEditorPanel.h
+    ui/widgets/EntityEditorPanel.cpp
+    ui/widgets/WorkbenchWindow.h
+    ui/widgets/WorkbenchWindow.cpp
     ui/widgets/MainWindow.h
     ui/widgets/MainWindow.cpp
     main/main.cpp
